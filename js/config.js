@@ -3,9 +3,6 @@
  *
  * This file contains all configurable settings for the application.
  * Modify these values to change the API endpoint or other settings.
- *
- * NB: scripts/generate-seo-pages.mjs leser også denne filen (via node:vm)
- * for API-endepunkt, appnavn og kildeinfo — hold strukturen kompatibel.
  */
 
 const AppConfig = {
@@ -25,7 +22,31 @@ const AppConfig = {
     nameFull: 'Statistisk sentralbyrå',
     url: 'https://www.ssb.no/',
     licenseUrl: 'https://www.ssb.no/diverse/lisens',
-    licenseName: 'CC BY 4.0'
+    licenseName: 'CC BY 4.0',
+
+    // Base URL for the paths-derived "Om statistikken" fallback link
+    // (<base><kortnavn>#om-statistikken), used only when the metadata
+    // response has no root link.related. A { <ui language>: url } object or a
+    // string; null for sources without the kortnavn URL convention — the
+    // fallback row is then omitted.
+    statisticsPageBase: {
+      nb: 'https://www.ssb.no/',
+      en: 'https://www.ssb.no/en/'
+    },
+
+    // The source's page of changed and removed tables, linked from the message
+    // for a table the API says doesn't exist ("Non-existent table"). A
+    // { <ui language>: url } object or a string; null for sources without such
+    // a page, and the message then has no link.
+    tableChangesUrl: {
+      nb: 'https://www.ssb.no/statbank/hvordan-bruke-statistikkbanken/endringer-i-statistikkbanktabeller',
+      en: 'https://www.ssb.no/en/statbank/hvordan-bruke-statistikkbanken/endringer-i-statistikkbanktabeller'
+    },
+
+    // The source's own page for a saved query, linked from «Få lenke»; {id}
+    // is replaced by the query ID. null for sources without such a page: the
+    // dialog then shows only the app's own #sq/ link.
+    savedQueryUrl: 'https://www.ssb.no/statbank/sq/{id}'
   },
 
   /**
@@ -41,12 +62,13 @@ const AppConfig = {
 
   /**
    * Instance-specific web analytics (Umami).
-   * Injected into <head> at startup by the bootstrap snippet in index.html.
-   * Set to null (or leave scriptUrl/websiteId empty) to disable analytics
-   * entirely — useful for local development or instances without tracking.
+   * Injected into <head> at startup by the snippet after config.js in index.html.
+   * Set to null (or leave scriptUrl/websiteId empty) to turn analytics off,
+   * e.g. for local development or an instance without tracking.
    *
-   * For a separate instance (e.g. the Swedish SCB portal), point scriptUrl
-   * and websiteId at that instance's own Umami site.
+   * Umami counts only on the hosts in `domains`. A separate deployment (another
+   * domain, or another PxWebApi source such as SCB) points scriptUrl and
+   * websiteId at its own Umami site.
    */
   analytics: {
     scriptUrl: 'https://stats.statistikkportalen.no/script.js',
@@ -106,7 +128,15 @@ const AppConfig = {
     tablePageBatchSize: 10000,
 
     // Maximum GET URL length before warning (SSB recommends < 2000 chars)
-    maxGetUrlLength: 2000
+    maxGetUrlLength: 2000,
+
+    // The source's rate limit. SSB: 40 calls per 60 s (x-ratelimit-policy
+    // header; its /config says 0). /config wins when it states a limit.
+    rateLimit: { calls: 40, windowMs: 60000 },
+
+    // Share of rateLimit the app uses, to be considerate towards the API:
+    // half, so 20 calls per 60 s at SSB. Cache hits don't count.
+    rateLimitShare: 0.5
   },
 
   /**
@@ -148,17 +178,16 @@ const AppConfig = {
     // Show discontinued tables by default in search and topic views
     showDiscontinuedByDefault: false,
 
-    // Skjul tidsperioden som ofte står på slutten av SSB-tabelltitler i
-    // listevisningen (søk, emner, forsiden), f.eks. "Konsumprisindeks 2010-2025"
-    // → "Konsumprisindeks". Perioden vises uansett i egen "Tidsperiode"-kolonne.
-    // Suffikset fjernes kun når det faktisk matcher start-/sluttperioden som
-    // vises i kolonnen (også flerårige intervaller som "(1990-2000)-(2024-2025)").
+    // Drop the time period many SSB titles end with in the table lists
+    // (search, topics, front page): "Konsumprisindeks 2010-2025" →
+    // "Konsumprisindeks". The period is in its own Tidsperiode column anyway.
+    // Only a suffix that matches the table's first/last period is removed
+    // (also ranges of ranges such as "(1990-2000)-(2024-2025)"). As in 1.4.5.
     hidePeriodInTableTitles: true,
 
-    // Antall stinivåer under et emne som vises som navigasjonskort før
-    // tabellisten vises i emnevisningen. SSB: 2 (undertema + kategori).
-    // Andre PxWebApi-instanser med grunnere hierarki kan bruke lavere verdi;
-    // 0 viser tabellisten allerede på emnenivå.
+    // Path levels shown as navigation cards in the topic view before the
+    // table list: 2 for SSB (subject → subtopics → categories), 1 for a
+    // shallower hierarchy such as SCB's. As in 1.4.5.
     topicCardDepth: 2
   },
 

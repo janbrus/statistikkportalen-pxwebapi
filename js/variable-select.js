@@ -30,7 +30,7 @@
  *
  * === File structure ===
  * This file is the main entry point. Supporting modules (loaded before this):
- *   variable-select-state.js    — module-level state variables + debouncedURLUpdate()
+ *   variable-select-state.js    — VarSelect state object (reset, setListState, debouncedURLUpdate) + isTimeDimension()
  *   variable-select-status.js   — visual updates, selection status, cell count, getVariableSelection()
  *   variable-select-codelists.js — codelist fetch/apply/restore + setupCodelistDropdowns()
  *   variable-select-render.js   — dimension card rendering, value lists, restoreSelections()
@@ -48,6 +48,7 @@
  */
 async function renderVariableSelection(container) {
   logger.log('[VariableSelect] Rendering variable selection');
+  const isCurrent = renderGuard();
 
   if (!AppState.selectedTable) {
     showError(t('error.noTable'));
@@ -57,22 +58,19 @@ async function renderVariableSelection(container) {
   }
 
   const table = AppState.selectedTable;
-  // Pre-rendrede tabellsider (/table/{id}/) har en generert tittel som skal stå
-  // urørt i Googlebots snapshot — ikke overskriv med plassholder-/lastetittel.
-  if (!seoTableMatchesRoute(table.id)) {
-    updatePageTitle([extractTableTitle(table.label), t('variable.heading')]);
-  }
+  updatePageTitle([extractTableTitle(table.label), t('variable.heading')]);
 
   await BrowserState.init();
+  if (!isCurrent()) return;
 
   // If we arrived via direct link/refresh, the label was a placeholder — update it now
   const realTable = BrowserState.allTables.find(t => t.id === table.id);
   if (realTable) {
     AppState.selectedTable.label = realTable.label;
-    if (!seoTableMatchesRoute(table.id)) {
-      updatePageTitle([extractTableTitle(table.label), t('variable.heading')]);
-    }
+    updatePageTitle([extractTableTitle(table.label), t('variable.heading')]);
   }
+
+  const isCompact = localStorage.getItem('varSelectLayout') === 'compact';
 
   container.innerHTML = `
     <div class="view-container">
@@ -85,16 +83,24 @@ async function renderVariableSelection(container) {
         <p class="table-id-display">${t('variable.tablePrefix')} ${escapeHtml(table.id)}</p>
         <p class="view-description">
           ${t('variable.instructions')}
+          <a href="#hjelp" class="help-inline-link app-help-link">${t('help.variablesHint')} →</a>
         </p>
-        <button id="load-default-selection" class="btn-secondary btn-sm"
-                title="${t('variable.defaultSelectionTitle')}">
-          ${t('variable.defaultSelection')}
-        </button>
+        <div class="view-header-buttons">
+          <button id="load-default-selection" class="btn-secondary btn-sm"
+                  title="${t('variable.defaultSelectionTitle')}">
+            ${t('variable.defaultSelection')}
+          </button>
+          <button id="toggle-compact-view" class="btn-secondary btn-sm${isCompact ? ' btn-active' : ''}"
+                  title="${t('variable.compactViewTitle')}"
+                  aria-pressed="${isCompact}">
+            ${t('variable.compactView')}
+          </button>
+        </div>
       </div>
 
       <div id="table-info-container"></div>
 
-      <div id="variables-container" class="variables-container">
+      <div id="variables-container" class="variables-container${isCompact ? ' compact' : ''}">
         <p class="loading-message">${t('loading.metadata')}</p>
       </div>
 
@@ -104,48 +110,59 @@ async function renderVariableSelection(container) {
         </button>
         <div class="query-preview-content" id="query-preview-content" style="display: none;">
 
-          <div class="api-builder-options" id="api-builder-options">
-            <div class="api-option-row">
-              <span class="api-builder-label">${t('api.method')}</span>
-              <div class="api-pill-group" role="radiogroup" aria-label="${t('api.method')}">
-                <label class="api-pill"><input type="radio" name="api-method" value="get" checked><span>GET</span></label>
-                <label class="api-pill"><input type="radio" name="api-method" value="post"><span>POST</span></label>
-              </div>
+          <div class="api-builder-options-grid">
+            <div class="api-builder-option">
+              <label class="api-builder-label">${t('api.method')}</label>
+              <select id="api-method-toggle" class="api-format-select">
+                <option value="get">GET</option>
+                <option value="post">POST</option>
+              </select>
             </div>
 
-            <div class="api-option-row">
-              <span class="api-builder-label">${t('api.format')}</span>
-              <div class="api-pill-group" id="api-format-group" role="radiogroup" aria-label="${t('api.format')}">
-                <label class="api-pill"><input type="radio" name="api-output-format" value="" checked><span>JSON-stat2</span></label>
-                <label class="api-pill"><input type="radio" name="api-output-format" value="csv"><span>CSV</span></label>
-                <label class="api-pill"><input type="radio" name="api-output-format" value="xlsx"><span>Excel</span></label>
-                <label class="api-pill"><input type="radio" name="api-output-format" value="px"><span>PX</span></label>
-                <label class="api-pill"><input type="radio" name="api-output-format" value="html"><span>HTML</span></label>
-                <label class="api-pill"><input type="radio" name="api-output-format" value="json-px"><span>JSON-PX</span></label>
-              </div>
+            <div class="api-builder-option">
+              <label class="api-builder-label">${t('api.format')}</label>
+              <select id="api-output-format" class="api-format-select">
+                <option value="" selected>JSON-stat2 (standard)</option>
+                <option value="csv">CSV</option>
+                <option value="xlsx">Excel (xlsx)</option>
+                <option value="px">PX (PC-Axis)</option>
+                <option value="html">HTML</option>
+                <option value="json-px">JSON-PX</option>
+              </select>
             </div>
 
-            <div class="api-option-row" id="api-display-option" style="display: none;">
-              <span class="api-builder-label">${t('api.display')}</span>
-              <div class="api-pill-group" role="radiogroup" aria-label="${t('api.display')}">
-                <label class="api-pill"><input type="radio" name="api-display-format" value="UseTexts" checked><span>${t('api.displayText')}</span></label>
-                <label class="api-pill"><input type="radio" name="api-display-format" value="UseCodes"><span>${t('api.displayCodes')}</span></label>
-                <label class="api-pill"><input type="radio" name="api-display-format" value="UseCodesAndTexts"><span>${t('api.displayBoth')}</span></label>
-              </div>
+            <div class="api-builder-option" id="api-display-option" style="display: none;">
+              <label class="api-builder-label">${t('api.display')}</label>
+              <select id="api-display-format" class="api-format-select">
+                <option value="UseTexts" selected>${t('api.displayText')}</option>
+                <option value="UseCodes">${t('api.displayCodes')}</option>
+                <option value="UseCodesAndTexts">${t('api.displayBoth')}</option>
+              </select>
             </div>
 
-            <div class="api-option-row" id="api-separator-option" style="display: none;">
-              <span class="api-builder-label">${t('api.separator')}</span>
-              <div class="api-pill-group" role="radiogroup" aria-label="${t('api.separator')}">
-                <label class="api-pill"><input type="radio" name="api-csv-separator" value="SeparatorSemicolon" checked><span>${t('api.separatorSemicolon')}</span></label>
-                <label class="api-pill"><input type="radio" name="api-csv-separator" value="SeparatorTab"><span>${t('api.separatorTab')}</span></label>
-                <label class="api-pill"><input type="radio" name="api-csv-separator" value="SeparatorSpace"><span>${t('api.separatorSpace')}</span></label>
-              </div>
+            <div class="api-builder-option" id="api-title-option" style="display: none;">
+              <label class="api-builder-label">${t('api.tableTitle')}</label>
+              <select id="api-include-title" class="api-format-select">
+                <option value="" selected>${t('variable.withoutTitle')}</option>
+                <option value="IncludeTitle">${t('variable.withTitle')}</option>
+              </select>
             </div>
 
-            <div class="api-option-row" id="api-extras-option" style="display: none;">
-              <label class="api-builder-checkbox-label"><input type="checkbox" id="api-include-title-cb"> ${t('api.includeTitle')}</label>
-              <label class="api-builder-checkbox-label"><input type="checkbox" id="api-layout-pivot-cb"> ${t('api.layoutPivot')}</label>
+            <div class="api-builder-option" id="api-separator-option" style="display: none;">
+              <label class="api-builder-label">${t('api.separator')}</label>
+              <select id="api-csv-separator" class="api-format-select">
+                <option value="SeparatorSemicolon" selected>${t('api.separatorSemicolon')}</option>
+                <option value="SeparatorTab">${t('api.separatorTab')}</option>
+                <option value="SeparatorSpace">${t('api.separatorSpace')}</option>
+              </select>
+            </div>
+
+            <div class="api-builder-option" id="api-layout-option" style="display: none;">
+              <label class="api-builder-label">${t('api.layout')}</label>
+              <select id="api-table-layout" class="api-format-select">
+                <option value="" selected>${t('api.layoutStandard')}</option>
+                <option value="pivot">${t('api.layoutPivot')}</option>
+              </select>
             </div>
           </div>
 
@@ -230,14 +247,33 @@ async function renderVariableSelection(container) {
   // Set up API builder events (copy, open, format selector)
   setupApiBuilderEvents();
 
-  // Fetch and display metadata
-  await loadTableMetadata(table.id);
+  // Fetch and display metadata. A newer render owns the buttons by now if
+  // isCurrent() fails, so don't add a second set of listeners to them.
+  await loadTableMetadata(table.id, isCurrent);
+  if (!isCurrent()) return;
 
   // Set up fetch button
   document.getElementById('fetch-data-btn')?.addEventListener('click', handleFetchData);
 
   // Set up default selection button
   document.getElementById('load-default-selection')?.addEventListener('click', handleLoadDefaultSelection);
+
+  // Set up compact-view toggle
+  document.getElementById('toggle-compact-view')?.addEventListener('click', handleToggleCompactView);
+}
+
+/**
+ * Toggle compact (grid) vs full (stacked) layout for the variable cards.
+ * Choice is persisted in localStorage under 'varSelectLayout'.
+ */
+function handleToggleCompactView() {
+  const container = document.getElementById('variables-container');
+  const btn = document.getElementById('toggle-compact-view');
+  if (!container || !btn) return;
+  const nowCompact = container.classList.toggle('compact');
+  btn.classList.toggle('btn-active', nowCompact);
+  btn.setAttribute('aria-pressed', String(nowCompact));
+  localStorage.setItem('varSelectLayout', nowCompact ? 'compact' : 'full');
 }
 
 /**
@@ -247,21 +283,23 @@ async function renderVariableSelection(container) {
 async function handleLoadDefaultSelection() {
   const btn = document.getElementById('load-default-selection');
   if (!btn || !AppState.selectedTable) return;
+  const isCurrent = renderGuard();
 
-  const originalText = btn.textContent;
+  const label = t('variable.defaultSelection');
   btn.disabled = true;
   btn.textContent = t('variable.defaultSelectionLoading');
 
-  let showingTempMessage = false;
   try {
     const result = await api.getDefaultSelection(AppState.selectedTable.id, getCurrentApiLang());
+    if (!isCurrent()) return;   // the user has left this table
     const entries = result?.selection || result || [];
 
     if (!Array.isArray(entries) || entries.length === 0) {
       logger.warn('[VariableSelect] Default selection returned empty or unexpected format:', result);
-      showingTempMessage = true;
+      // Say so on the button for 3 s, kept disabled so a second click can't
+      // start over in the middle of the message; finally then restores it
       btn.textContent = t('variable.defaultSelectionEmpty');
-      setTimeout(() => { btn.textContent = originalText; }, 3000);
+      await new Promise(resolve => setTimeout(resolve, 3000));
       return;
     }
 
@@ -278,33 +316,43 @@ async function handleLoadDefaultSelection() {
     AppState.variableSelection = newSelection;
     AppState.activeCodelistIds = newCodelists;
 
-    await restoreSelections();
-    updateSelectionStatus();
+    // Replace, don't merge: rebuild the cards from metadata so no earlier pick,
+    // codelist or filter text survives, then apply the default through the
+    // normal restore path (displayVariables → restoreSelections).
+    VarSelect.resetSelections();
+    await displayVariables();
   } catch (err) {
     logger.error('[VariableSelect] Failed to load default selection:', err);
     showError(t('error.defaultSelection'), err);
   } finally {
     btn.disabled = false;
-    if (!showingTempMessage) btn.textContent = originalText;
+    btn.textContent = label;
   }
 }
 
 /**
  * Load table metadata from API
  * @param {string} tableId - Table ID
+ * @param {function(): boolean} isCurrent - renderGuard() of the calling render
  */
-async function loadTableMetadata(tableId) {
+async function loadTableMetadata(tableId, isCurrent) {
+  // Start from a clean slate, so a failed load can't leave the previous
+  // table's metadata, codelists or shift-click anchors behind
+  VarSelect.reset();
+
   const data = await safeApiCall(
     () => api.getTableMetadata(tableId, true, getCurrentApiLang()),
-    t('error.loadMetadata') + tableId
+    t('error.loadMetadata') + tableId,
+    document.getElementById('variables-container')
   );
+  if (!isCurrent()) return;
 
   if (!data || !data.dimension) {
     logger.error('[VariableSelect] Invalid metadata format:', data);
     return;
   }
 
-  tableMetadata = data;
+  VarSelect.tableMetadata = data;
   logger.log('[VariableSelect] Loaded metadata:', data);
 
   // Update title if it was set as a placeholder during direct URL navigation
@@ -316,19 +364,14 @@ async function loadTableMetadata(tableId) {
     if (bc) bc.textContent = AppState.selectedTable.id + ' ' + extractTableTitle(data.label);
   }
 
-  // Tabellinfo (notater, kilde, kontakt, Klass-lenker) — samme kollapsbare
-  // seksjon som på tabellvisningen. Viktig også for crawlere: de pre-rendrede
-  // /table/{id}/-sidene erstattes av denne visningen når appen booter, og
-  // uten denne seksjonen ville beskrivelsen forsvinne fra Googlebots snapshot.
+  // Tabellinfo (source, notes, contact, definitions): the same collapsible
+  // section as in the table view, so the notes, e.g. "replaced by table …",
+  // can be read before values are picked. As in 1.4.5.
   const infoContainer = document.getElementById('table-info-container');
-  if (infoContainer && typeof buildMetadataSection === 'function') {
+  if (infoContainer) {
     infoContainer.innerHTML = buildMetadataSection(data);
     setupMetadataToggle(infoContainer);
   }
-
-  // Reset codelist state for new table
-  Object.keys(activeCodelists).forEach(k => delete activeCodelists[k]);
-  Object.keys(dimensionValueOrder).forEach(k => delete dimensionValueOrder[k]);
 
   // Display variables
   await displayVariables();

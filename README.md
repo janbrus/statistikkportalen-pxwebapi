@@ -1,42 +1,48 @@
 # Statistikkportalen
 Statistikkportalen er et uoffisielt grensesnitt som forbedrer tilgangen til SSBs data. Applikasjonen gir rask navigering gjennom lokal caching, et kompakt grensesnitt for å minimere scrolling, og enklere oppdagelse av tabeller gjennom menynavigering.
 
-Applikasjonen kan tilpasses andre systemer som bruker PxWebApi v2, eksempelvis SCBs statistikkbank. Det krever kun at tre filer byttes ut: `config.js` (API-URL, kilde, språk), `subjects.js` (emnehierarki) og `synonyms.js` (søkesynonymer).
+Applikasjonen kan tilpasses andre systemer som bruker PxWebApi v2, eksempelvis SCBs statistikkbank. Det meste ligger i tre filer som byttes ut: `config.js` (API-URL, kilde, språk), `subjects.js` (emnehierarki og emnenavn på alle språk) og `synonyms.js` (søkesynonymer). I tillegg må SSB-lenkene i `table-metadata.js` og `table-save-query.js` samt fargepaletten i `chart-view.js` tilpasses. Øvrig visuell tilpassing (farger, typografi, avrunding) styres av CSS-variabler i `:root` i `css/main.css`.
 
 ## Funksjonalitet
 1. **Oppdag tabeller raskt og enkelt**
    - Søk gjennom alle SSBs tilgjengelige tabeller
    - Filtrer etter emne og frekvens
-   - Oversiktlige kort med metadata (periode, oppdateringsdato, antall variabler)
+   - Oversiktlige tabellister med tabellnummer, tittel, tidsperiode og oppdateringsdato. Perioden står i egen kolonne, så den gjentas ikke i tittelen
+   - Emnekortene kan også åpnes med tastaturet (Tab + Enter/mellomrom)
+   - En lenke til en fjernet tabell gir en tydelig melding med lenke til SSBs oversikt over endrede og fjernede tabeller
 
 2. **Variabelvelger**
    - Interaktivt grensesnitt for å velge verdier for hver dimensjon
    - Semantiske merker (Tid, Geografi, Statistikkvariabel) basert på JSON-stat2 `role`
    - Tidsdimensjon viser forventet periodeformat (f.eks. `2024M06`)
-   - Støtte for kodelister, inkludert riktig håndtering av aggregeringer (`agg_*`) — sender automatisk `outputValues=aggregated` for korrekte summerte tall
+   - Støtte for kodelister, inkludert aggregeringer (`agg_*`) som gir summerte tall, f.eks. tidskonsistente kommunetall
    - Støtte for spesielle operatorer
      - `*` — Alle verdier
      - `top(n)` — De n siste verdiene (f.eks. `top(12)` for siste 12 måneder)
-     - `from(periode)` — Alle verdier fra og med en gitt periode (f.eks. `from(2020M01)`)
    - Visuelle indikatorer for valideringsstatus
+   - Berøringsvennlig: på nettbrett/mobil veksler et trykk en verdi inn/ut, slik at flervalg fungerer uten tastatur
+   - Valgfri kompaktvisning som plasserer dimensjonene i et flerkolonners rutenett på brede skjermer (huskes per nettleser)
 
 3. **API-bygger**
    - Generer GET- og POST-URL direkte fra variabelvalget
-   - Støtte for alle responsformater (JSON-stat2, CSV, Excel, PX, HTML) — formatlisten leses dynamisk fra `/config` slik at den alltid speiler hva API-et faktisk støtter
-   - Tidsdimensjonen optimeres automatisk: eksplisitte perioder erstattes med `from(startdato)` eller `top(n)` for en dynamisk URL som alltid henter ferske data
-   - URL vises i klartekst som standard
+   - Støtte for responsformatene JSON-stat2, CSV, Excel, PX, HTML og JSON-PX — formater som API-et ikke oppgir i `/config`, skjules fra listen
+   - Tidsdimensjonen optimeres automatisk: når valget er sammenhengende og når den nyeste perioden, erstattes eksplisitte perioder med `from(startdato)` eller `top(n)` for en dynamisk URL som alltid henter ferske data. Ellers listes periodene enkeltvis
+   - URL vises i klartekst som standard; kopier og åpne bruker alltid den URL-kodede versjonen, så lenken virker også med koder som `105+`
    - Kopier URL eller POST-body med ett klikk
 
 4. **Datavisning**
-   - Intelligent standard layout
+   - Intelligent standard layout — Statistikkvariabel som øverste kolonneoverskrift, tid nedover som rader, og automatisk kompaktvisning som stabler alle dimensjoner i kolonneoverskriften når tabellen er smal nok
    - Sticky headers for enkel navigering i store tabeller
    - Norske tallformater (mellomrom som tusenskilletegn, komma som desimalskilletegn)
-   - Korrekt visning av statuskoder (`.`, `..`, `:`) per SSBs konvensjon
-   - Tabellinfo med direktelenke til "Om statistikken" på ssb.no
+   - Korrekt visning av statuskoder per SSBs konvensjon: `.`, `..` og `:` for manglende tall, og foreløpige tall med `*` etter tallet
+   - Obligatoriske noter (`extension.noteMandatory`) vises alltid under tabellen eller diagrammet, f.eks. at tabellen erstatter en avsluttet tabell eller at referanseåret er endret. Lenker til andre tabeller i notene åpner tabellen i appen (Ctrl/Cmd-klikk gir ny fane)
+   - Tabellinfo, både i variabelvelgeren og over tabellen, med notene, kilde og direktelenker til statistikksiden, "Om statistikken" og klassifikasjoner/definisjoner (Klass/VarDok) fra API-ets `link.related`, og en «Definisjon»-lenke på variabelkortene
+   - Linjediagram-toggle (📈) for tidsserier — SSB-stilrent i offisiell palett, med riktig desimalpresisjon per statistikkvariabel (hentet fra `category.unit.decimals`), manglende tall rendret som hull (foreløpige tall beholdes og merkes i verktøytipset), og obligatorisk kildelinje under figuren
 
 5. **Tabellrotasjon**
    - Drag-and-drop-grensesnitt for å endre tabellayout
    - Flytt dimensjoner mellom rader og kolonner
+   - Full tastaturstøtte: Tab til en dimensjon, piltast venstre/høyre flytter mellom rader og kolonner, opp/ned endrer rekkefølgen
    - Hurtigvalg: Standard, Transponér, Alle som rader/kolonner
 
 6. **Dataeksport**
@@ -44,17 +50,24 @@ Applikasjonen kan tilpasses andre systemer som bruker PxWebApi v2, eksempelvis S
    - Valg for eksportformat, eksempelvis pivotvennlig CSV
 
 7. **Caching**
-   - Intelligent caching av API-kall i localStorage
+   - Intelligent caching av API-kall i localStorage og IndexedDB (for store elementer som tabellisten)
    - Automatisk opprydding av utdaterte data
 
 8. **Lagrede spørringer**
    - Lagre spørringer som kan gjenfinnes med lenke
    - Åpne en SSB-spørring ved å lime lenken inn i søkefeltet
 
-9. **Smart søk (beta)**
-   - Finn flere tabeller enn ved den vanlige søkemodusen
+9. **Forbedret søk**
+   - Finn flere tabeller enn ved den vanlige søkemodusen, ved hjelp av synonymer. Slått på som standard
+
+10. **Innebygd hjelp**
+   - Kondensert brukerveiledning i appen (`#hjelp`), med inngang fra footer, forsiden og variabelvelgeren
+   - Fullstendig veiledning i [`BRUKERVEILEDNING.md`](BRUKERVEILEDNING.md)
 
 ## Kom i gang
+
+Ny bruker? Se den fullstendige **[brukerveiledningen](BRUKERVEILEDNING.md)** for en steg-for-steg-innføring i grensesnittet. I appen ligger en kortversjon under **Hjelp** (footer-lenken, eller `#hjelp`). Kortversjonen av oppstarten:
+
 1. Åpne `index.html` i en moderne nettleser
 2. Vent til tabellisten lastes (caches automatisk)
 3. Søk eller bla til ønsket tabell
@@ -62,38 +75,14 @@ Applikasjonen kan tilpasses andre systemer som bruker PxWebApi v2, eksempelvis S
 5. Klikk «Hent data»
 6. Utforsk, roter og eksporter data
 
-## SEO-sider (pre-rendering)
-Appen er hash-rutet (`#topic/...`), som er usynlig for søkemotorer. `scripts/generate-seo-pages.mjs`
-genererer derfor statiske, crawlbare emnesider med pene URL-er
-(f.eks. `/okonomi/nasjonalregnskap-og-konjunkturer/nasjonalregnskap/`) og én side per
-tabell, også avsluttede (`/table/{id}/`, Dataset-enes kanoniske landingssider for Google
-Dataset Search)
-direkte i webroot, pluss `sitemap.xml`, `robots.txt` og `seo-map.json` (rute → kanonisk URL,
-brukes av `js/seo-head.js` til å holde canonical/og:-tagger i synk ved navigering i appen).
-Sidene er fulle app-skall: brukere som lander der overføres umiddelbart til den tilsvarende
-`#topic/...`- eller `#variables/{id}`-URL-en uten omlasting (via `window.__SEO_TOPIC_PATH__`-/
-`window.__SEO_TABLE_ID__`-bootstrapen i `index.html`).
-
-Kjøres periodisk på serveren med cron (krever Node 18+):
-```
-15 4 * * 0 cd /sti/til/repo && node scripts/generate-seo-pages.mjs --webroot /sti/til/webroot --site https://statistikkportalen.no >> seo-gen.log 2>&1
-```
-Bruk `--dry-run` for å se hva som ville blitt skrevet. Scriptet sletter kun filer det selv
-har generert (sporet i `{webroot}/.seo-manifest.json`), og avbryter uten å røre webroot
-ved API-feil. De genererte filene skal ikke sjekkes inn i git.
-
-Tabellsidene berikes med innhold fra lokale metadatafiler i `data/table-metadata/{id}.json`
-(eksakte responser fra `/tables/{id}/metadata`, lastes ned av et eget oppdaterings-script —
-se `data/table-metadata/README.md` for kontrakten; katalogen overstyres med `--metadata-dir`).
-Tabeller uten gyldig fil får samme innhold som før fra `/tables`-listen alene. Siden
-metadatafilene kan være gamle, hentes tidsperiode og oppdatert-dato alltid fra den ferske
-`/tables`-listen.
-
 ## Systemkrav
 - Moderne nettleser (Chrome, Firefox, Safari, Edge, Vivaldi)
 - JavaScript aktivert
 - Internettforbindelse (for API-kall)
-- localStorage aktivert (for caching)
+- localStorage aktivert (for caching og språkvalg), og helst IndexedDB (for caching av store elementer som tabellisten)
+
+## Endringer
+Hva som er nytt i hver versjon, står i [`CHANGELOG.md`](CHANGELOG.md). Utviklingsloggen med testing og åpne spørsmål er [`DEVLOG.md`](DEVLOG.md).
 
 ## Lisens
 Denne koden er lisensiert under [MIT-lisens](LICENCE.md).

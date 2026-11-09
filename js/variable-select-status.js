@@ -147,7 +147,7 @@ function updateSelectionStatus() {
   }
 
   // Update URL with current selections (debounced to avoid excessive history entries)
-  debouncedURLUpdate();
+  VarSelect.debouncedURLUpdate();
 }
 
 /**
@@ -161,7 +161,7 @@ function updateSelectionStatus() {
  * @returns {number} - True total value count
  */
 function getTrueDimensionValueCount(dimCode) {
-  const codelistInfo = activeCodelists[dimCode];
+  const codelistInfo = VarSelect.activeCodelists[dimCode];
 
   if (codelistInfo) {
     // Codelist active: count is the number of original dimension codes covered
@@ -169,8 +169,8 @@ function getTrueDimensionValueCount(dimCode) {
   }
 
   // No codelist: use the full metadata dimension
-  if (tableMetadata && tableMetadata.dimension[dimCode]) {
-    return Object.keys(tableMetadata.dimension[dimCode].category.label).length;
+  if (VarSelect.tableMetadata && VarSelect.tableMetadata.dimension[dimCode]) {
+    return Object.keys(VarSelect.tableMetadata.dimension[dimCode].category.label).length;
   }
   return 0;
 }
@@ -187,7 +187,7 @@ function getTrueDimensionValueCount(dimCode) {
  */
 function updateSelectionCellCount() {
   const cellCountEl = document.getElementById('cell-count-display');
-  if (!cellCountEl || !tableMetadata) return 0;
+  if (!cellCountEl || !VarSelect.tableMetadata) return 0;
 
   let selectedCells = 1;
   let maxCells = 1;
@@ -217,21 +217,38 @@ function updateSelectionCellCount() {
     let dimSelectedCount = 0;
     let dimMaxCount = trueCount;
 
-    const codelistInfo = activeCodelists[dimCode];
+    const codelistInfo = VarSelect.activeCodelists[dimCode];
+
+    // For aggregated (agg_) codelists, the dimension's effective width is the
+    // number of aggregate codes (what we actually POST), not the number of
+    // underlying originals that getTrueDimensionValueCount returns. Without
+    // this, star mode + an agg_ codelist over-counts by 10–30× and the fetch
+    // button is wrongly disabled by the maxCells guard.
+    const isAggCodelist = codelistInfo && codelistInfo.isAggregated;
+    if (isAggCodelist) {
+      dimMaxCount = codelistInfo.values.length;
+    }
 
     if (mode === 'star') {
       // All values selected
-      dimSelectedCount = trueCount;
+      dimSelectedCount = isAggCodelist ? codelistInfo.values.length : trueCount;
     } else if (mode === 'top') {
       // Last N values
       const topN = parseInt(card.querySelector('.top-n-input')?.value || '10', 10);
       dimSelectedCount = Math.min(topN, trueCount);
     } else {
-      // Specific mode - count selected items
-      if (codelistInfo) {
-        // Codelist active: count expanded codes via valueMap
-        // For filter codelists this equals selectedItems.length (each maps to 1 code)
-        // For aggregated codelists this gives the true expanded code count
+      // Specific mode - count selected items.
+      //
+      // Mirror what getVariableSelection() actually sends:
+      //   - vs_ (filter) codelist: each selected item is expanded via
+      //     valueMap to original dimension codes (mostly a no-op since
+      //     vs_ valueMap[0] === code, but kept explicit for clarity).
+      //   - agg_ (aggregation) codelist: the aggregate codes are sent
+      //     AS-IS — the API returns one cell per aggregate, NOT one per
+      //     underlying original. Expanding via valueMap here would over-
+      //     count by 10–30× and wrongly disable the fetch button.
+      //   - No codelist: plain selection count.
+      if (codelistInfo && !codelistInfo.isAggregated) {
         let expandedCount = 0;
         selectedItems.forEach(item => {
           const valueMapJson = item.dataset.valuemap;
@@ -248,7 +265,6 @@ function updateSelectionCellCount() {
         });
         dimSelectedCount = expandedCount;
       } else {
-        // No codelist - just count selected items
         dimSelectedCount = selectedItems.length;
       }
     }
@@ -325,7 +341,7 @@ function getVariableSelection() {
     const isElimination = card.dataset.elimination === 'true';
 
     if (mode === 'star') {
-      const codelistInfo = activeCodelists[dimCode];
+      const codelistInfo = VarSelect.activeCodelists[dimCode];
       if (codelistInfo && codelistInfo.isAggregated) {
         // Aggregated (agg_) codelist: send all codelist codes as-is.
         // The API resolves them using the codelist ID in the POST body.
@@ -350,7 +366,7 @@ function getVariableSelection() {
       // effectively a no-op, but keeps the logic consistent.
       // Aggregated (agg_) codelists: keep the aggregate codes as-is — the API
       // resolves them using the codelist ID in the POST body.
-      const codelistInfo = activeCodelists[dimCode];
+      const codelistInfo = VarSelect.activeCodelists[dimCode];
       if (codelistInfo && !codelistInfo.isAggregated) {
         const expandedCodes = new Set();
         selectedItems.forEach(item => {
@@ -372,9 +388,8 @@ function getVariableSelection() {
       // Time dimensions: restore chronological order (oldest first).
       // The UI shows newest first for convenience, but the API and table
       // display expect chronological order.
-      const isTimeDim = dimCode === 'Tid' || dimCode.toLowerCase().includes('tid');
-      if (isTimeDim && tableMetadata?.dimension[dimCode]?.category?.index) {
-        const indexMap = tableMetadata.dimension[dimCode].category.index;
+      if (isTimeDimension(dimCode) && VarSelect.tableMetadata?.dimension[dimCode]?.category?.index) {
+        const indexMap = VarSelect.tableMetadata.dimension[dimCode].category.index;
         values.sort((a, b) => (indexMap[a] ?? 0) - (indexMap[b] ?? 0));
       }
 
@@ -401,9 +416,9 @@ function getVariableSelection() {
  * @returns {boolean} - True if all mandatory dimensions have selections
  */
 function validateSelection(selection) {
-  if (!tableMetadata) return false;
+  if (!VarSelect.tableMetadata) return false;
 
-  for (const dimCode of tableMetadata.id) {
+  for (const dimCode of VarSelect.tableMetadata.id) {
     // Get current elimination status from the card (may be overridden by codelist)
     const card = document.querySelector('.variable-card[data-dimension="' + dimCode + '"]');
     const isElimination = card ? card.dataset.elimination === 'true' : false;

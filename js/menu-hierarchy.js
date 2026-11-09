@@ -5,9 +5,10 @@
 
 class MenuHierarchy {
   constructor() {
-    // Subject groups and names loaded from subjects.js
+    // Subject groups from subjects.js. Display names are read with
+    // t('subject.group.' + id) / t('subject.name.' + code): subjects.js
+    // registers its {nb, en, sv} texts in the translation dictionary.
     this.subjectGroups = SubjectConfig.subjectGroups;
-    this.subjectNames = SubjectConfig.subjectNames;
 
     this.allTables = [];
     this.hierarchy = {};
@@ -39,9 +40,6 @@ class MenuHierarchy {
 
   /**
    * Add a single path to the hierarchy tree
-   *
-   * NB: scripts/generate-seo-pages.mjs har en duplikat av denne logikken —
-   * endres tre-strukturen her, må den oppdateres der også.
    */
   _addPathToHierarchy(path, table) {
     if (path.length === 0) return;
@@ -94,7 +92,7 @@ class MenuHierarchy {
       const node = this.hierarchy[subjectCode];
       return {
         id: subjectCode,
-        label: t('subject.name.' + subjectCode) || this.subjectNames[subjectCode] || subjectCode,
+        label: t('subject.name.' + subjectCode),
         tableCount: this._countTables(node),
         node: node
       };
@@ -116,13 +114,14 @@ class MenuHierarchy {
         tableCount: this._countTables(child),
         hasSubcategories: Object.keys(child.children).length > 0
       }))
-      .sort((a, b) => a.sortCode.localeCompare(b.sortCode));
+      .sort((a, b) => (a.sortCode || '').localeCompare(b.sortCode || ''));
   }
 
   /**
    * Get child nodes at any path depth, as card-friendly summaries.
    * Used by the topic view for all card levels below the subject level
    * (how many levels show cards is governed by AppConfig.ui.topicCardDepth).
+   * @param {string[]} pathIds - Path IDs to navigate
    */
   getChildrenForPath(pathIds) {
     const node = this.getNodeForPath(pathIds);
@@ -136,14 +135,7 @@ class MenuHierarchy {
         tableCount: this._countTables(child),
         hasChildren: Object.keys(child.children).length > 0
       }))
-      .sort((a, b) => a.sortCode.localeCompare(b.sortCode));
-  }
-
-  /**
-   * Get categories for a subtopic (level 3+ nodes)
-   */
-  getCategoriesForSubtopic(subjectCode, subtopicId) {
-    return this.getChildrenForPath([subjectCode, subtopicId]);
+      .sort((a, b) => (a.sortCode || '').localeCompare(b.sortCode || ''));
   }
 
   /**
@@ -198,7 +190,7 @@ class MenuHierarchy {
       result = result.filter(t => !t.discontinued);
     }
 
-    return result.sort((a, b) => b.updated.localeCompare(a.updated));
+    return result.sort((a, b) => (b.updated || '').localeCompare(a.updated || ''));
   }
 
   /**
@@ -259,7 +251,7 @@ class MenuHierarchy {
       .sort(([a], [b]) => b.localeCompare(a))
       .map(([name, tables]) => ({
         name,
-        tables: tables.sort((a, b) => a.sortCode.localeCompare(b.sortCode))
+        tables: tables.sort((a, b) => (a.sortCode || '').localeCompare(b.sortCode || ''))
       }));
   }
 
@@ -285,13 +277,16 @@ class MenuHierarchy {
 
     // Add subject
     breadcrumbs.push({
-      label: t('subject.name.' + subjectCode) || this.subjectNames[subjectCode] || subjectCode,
+      label: t('subject.name.' + subjectCode),
       path: [subjectCode]
     });
 
-    // Navigate path to build remaining breadcrumbs
+    // Navigate path to build remaining breadcrumbs.
+    // Loop guard: stop walking the moment we drop off the known tree, so a
+    // stale or unknown subject code degrades to "shorter trail" instead of
+    // throwing on `undefined.children`.
     let node = this.hierarchy[subjectCode];
-    for (let i = 1; i < pathIds.length; i++) {
+    for (let i = 1; i < pathIds.length && node; i++) {
       node = node.children[pathIds[i]];
       if (node) {
         breadcrumbs.push({

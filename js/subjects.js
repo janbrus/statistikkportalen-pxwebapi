@@ -18,10 +18,9 @@
  * For en annen instans (f.eks. SCB): bytt ut denne filen med tilsvarende
  * struktur for den aktuelle statistikkbanken.
  *
- * NB: scripts/generate-seo-pages.mjs leser også denne filen (via node:vm)
- * for å generere statiske SEO-sider — hold strukturen kompatibel. Der kjøres
- * filen uten translations.js, så registreringen nedenfor hoppes over (guard
- * på `typeof translations`) og labelene leses som objekter direkte.
+ * Må lastes etter translations.js. Uten translations (f.eks. i et
+ * Node-skript som leser konfigurasjonen) hoppes registreringen over, og
+ * labelene kan leses som objekter direkte.
  */
 const SubjectConfig = {
   subjectGroups: {
@@ -110,8 +109,8 @@ const SubjectConfig = {
 
 // Registrer menytekstene i den delte oversettelsesordboka (translations.js),
 // slik at t('subject.group.{id}') og t('subject.name.{kode}') fungerer.
-// Hoppes over når filen kjøres uten translations (f.eks. i SEO-generatorens
-// node:vm-sandkasse), der labelene leses som objekter direkte.
+// Hoppes over når filen kjøres uten translations, der labelene leses som
+// objekter direkte.
 if (typeof translations !== 'undefined') {
   const register = (key, byLang) => {
     for (const [lang, text] of Object.entries(byLang)) {

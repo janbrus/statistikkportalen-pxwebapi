@@ -22,7 +22,7 @@ const BrowserState = {
     subjectFilter: '',
     frequencyFilter: '',
     updatedFilter: '',
-    enhanced: true
+    enhanced: true   // on by default, as in 1.4.5; the URL carries enh=0 when it's off
   },
 
   // Lazy search index for enhanced mode (built on first use, cached forever)
@@ -53,7 +53,10 @@ const BrowserState = {
     this.isLoaded = false;
     this._initPromise = null;
     this.allTables = [];
+    this.recentTables = null;
     this.menuHierarchy = null;
+    // Search index is built from language-specific labels — must be rebuilt
+    this._searchIndex = null;
   },
 
   async _doInit() {
@@ -63,14 +66,22 @@ const BrowserState = {
       // Fetch API config first to apply server limits before any data requests
       await api.getConfig();
 
-      // Fetch all tables (with automatic pagination if needed)
-      const response = await api.getAllTables({
-        lang: getCurrentApiLang(),
-        includeDiscontinued: true
-      });
+      // Fetch full table list and the last-7-days slice in parallel.
+      // recentTables powers the front-page "Sist oppdatert" tiles via the fast
+      // path in _collectRecentUpdateGroups; if the small fetch fails we fall
+      // back to walking the full hierarchy.
+      const lang = getCurrentApiLang();
+      const [response, recentResponse] = await Promise.all([
+        api.getAllTables({ lang, includeDiscontinued: true }),
+        api.getTables({ lang, includeDiscontinued: false, pastDays: 7 }).catch(err => {
+          logger.warn('[BrowserState] Recent-tables fetch failed; front page will walk full hierarchy:', err);
+          return null;
+        })
+      ]);
 
       this.allTables = response.tables;
-      logger.log(`[BrowserState] Loaded ${this.allTables.length} tables`);
+      this.recentTables = recentResponse?.tables || null;
+      logger.log(`[BrowserState] Loaded ${this.allTables.length} tables (${this.recentTables ? this.recentTables.length : 0} recent)`);
 
       this.menuHierarchy = new MenuHierarchy();
       this.menuHierarchy.buildHierarchy(this.allTables);
@@ -108,6 +119,7 @@ const BrowserState = {
     this.searchFilters.subjectFilter = params.subj || '';
     this.searchFilters.frequencyFilter = params.freq || '';
     this.searchFilters.updatedFilter = params.upd || '';
+    // Only enh=0 turns it off, so 1.4.5's links (enh=0) still work
     this.searchFilters.enhanced = params.enh !== '0';
   },
 
@@ -319,16 +331,15 @@ const BrowserState = {
   },
 
   /**
-   * Clean table label (remove table ID prefix if present, and optionally the
-   * trailing time period that SSB appends to many titles).
-   *
-   * The trailing period is only stripped when AppConfig.ui.hidePeriodInTableTitles
-   * is enabled and the suffix actually matches the table's first/last period,
-   * so we never accidentally cut off part of a real title.
+   * Clean table label for the table lists: remove the table ID prefix if
+   * present, and the trailing time period SSB appends to most titles when
+   * AppConfig.ui.hidePeriodInTableTitles is on (the Tidsperiode column shows
+   * it). The period goes only when it matches the table's first/last period,
+   * so a real part of a title is never cut off.
    */
   cleanTableLabel(label, firstPeriod, lastPeriod) {
     let cleaned = label.replace(/^\d+:\s*/, '');
-    if (AppConfig.ui.hidePeriodInTableTitles) {
+    if (AppConfig.ui?.hidePeriodInTableTitles) {
       cleaned = this.stripTrailingPeriod(cleaned, firstPeriod, lastPeriod);
     }
     return cleaned;
@@ -336,34 +347,31 @@ const BrowserState = {
 
   /**
    * Remove the trailing time period from a table title when it matches the
-   * recoded first/last period shown in the "Tidsperiode" column.
+   * first/last period shown in the Tidsperiode column. Handles simple ranges
+   * ("2010-2025", "2016M01-2025M12") and titles whose endpoints are ranges
+   * themselves, in parentheses ("(1990-2000)-(2024-2025)"). When first and last
+   * period are equal, a single period ("2025" or "(2025)") matches too. Any
+   * separator left at the end (". ", " ", "-", ":", ",") goes with it.
+   * Over SSB's 7816 tables (2026-11-08) this shortens all but the one title
+   * without a period, and leaves nothing odd behind.
    *
-   * Handles both simple ranges ("2010-2025", "2016M01-2025M12") and titles
-   * where each endpoint is itself a range, written with parentheses
-   * ("(1990-2000)-(2024-2025)"). When first and last period are equal, a single
-   * period at the end ("2025" or "(2025)") is matched too.
+   * @param {string} label - Title without the ID prefix
+   * @param {string} [firstPeriod] - From the /tables entry
+   * @param {string} [lastPeriod] - From the /tables entry
+   * @returns {string}
    */
   stripTrailingPeriod(label, firstPeriod, lastPeriod) {
     const fp = (firstPeriod || '').trim();
     const lp = (lastPeriod || '').trim();
     if (!fp && !lp) return label;
 
-    const candidates = [];
-    if (fp && lp) {
-      if (fp === lp) {
-        candidates.push(fp, `(${fp})`);
-      } else {
-        candidates.push(`(${fp})-(${lp})`, `${fp}-${lp}`);
-      }
-    } else {
-      const single = fp || lp;
-      candidates.push(single, `(${single})`);
-    }
+    // One period when only one is known or both are equal, else a range
+    const single = (!fp || !lp || fp === lp) ? (fp || lp) : null;
+    const candidates = single ? [single, `(${single})`] : [`(${fp})-(${lp})`, `${fp}-${lp}`];
 
-    const trimmed = label.replace(/\s+$/, '');
+    const trimmed = label.trimEnd();
     for (const candidate of candidates) {
-      if (candidate && trimmed.endsWith(candidate)) {
-        // Drop the period, then any trailing separator (". ", " ", "-", ":", ",").
+      if (trimmed.endsWith(candidate)) {
         return trimmed
           .slice(0, trimmed.length - candidate.length)
           .replace(/[\s.,:;-]+$/, '');

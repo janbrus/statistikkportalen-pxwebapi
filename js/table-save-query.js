@@ -7,12 +7,13 @@ let _lastSavedQuery = null; // { fingerprint: string, id: string }
 
 /**
  * Show dialog for saving the current query and presenting shareable links.
- * POSTs to SSB's /savedqueries endpoint and displays both an SSB link
- * and a Statistikkportalen deep-link using the returned query ID.
+ * POSTs to the source's /savedqueries endpoint and displays the app's own
+ * deep-link (#sq/{id}) and, when AppConfig.source.savedQueryUrl is set, a link
+ * to the source's page for the query.
  */
 async function showSaveQueryDialog() {
   if (!currentData || !AppState.selectedTable || !AppState.variableSelection) {
-    showError('Ingen aktiv spørring å lagre');
+    showError(t('saveQuery.noActive'));
     return;
   }
 
@@ -35,11 +36,11 @@ async function showSaveQueryDialog() {
     <div class="dialog-overlay" id="save-query-dialog">
       <div class="dialog-container" style="max-width: 540px;">
         <div class="dialog-header">
-          <h3>Få lenke til spørringen</h3>
+          <h3>${t('saveQuery.title')}</h3>
           <button class="dialog-close" id="save-query-close">&times;</button>
         </div>
         <div class="dialog-content" id="save-query-content">
-          ${needsLoading ? '<p class="loading-message">Lagrer spørring hos SSB...</p>' : ''}
+          ${needsLoading ? '<p class="loading-message">' + escapeHtml(tpl('saveQuery.saving', AppConfig.source.name)) + '</p>' : ''}
         </div>
       </div>
     </div>
@@ -64,33 +65,36 @@ async function showSaveQueryDialog() {
   });
 
   const showLinks = (id) => {
-    const ssbUrl = 'https://www.ssb.no/statbank/sq/' + id;
+    // The source's own page for the query (AppConfig.source.savedQueryUrl);
+    // without one, only the app's link is shown
+    const sourceUrlTemplate = AppConfig.source?.savedQueryUrl;
+    const ssbUrl = sourceUrlTemplate ? sourceUrlTemplate.replace('{id}', encodeURIComponent(id)) : null;
     const portalUrl = window.location.origin + window.location.pathname + '#sq/' + id;
 
     document.getElementById('save-query-content').innerHTML = `
-      <p>Spørringen er lagret. Bruk lenkene nedenfor for å dele eller gjenåpne den.</p>
+      <p>${t('saveQuery.saved')}</p>
 
       <div class="form-group">
-        <label class="form-label">Åpne i Statistikkportalen:</label>
+        <label class="form-label">${escapeHtml(tpl('saveQuery.portalLabel', AppConfig.app.name))}</label>
         <div class="save-query-link-row">
           <input type="text" class="save-query-link-input" readonly
                  id="portal-link-input" value="${escapeHtml(portalUrl)}">
-          <button class="btn-secondary" id="copy-portal-link">Kopier</button>
+          <button class="btn-secondary" id="copy-portal-link">${t('saveQuery.copy')}</button>
         </div>
       </div>
-
+      ${ssbUrl ? `
       <div class="form-group">
-        <label class="form-label">Åpne i SSBs statistikkbank:</label>
+        <label class="form-label">${escapeHtml(tpl('saveQuery.sourceLabel', AppConfig.source.name))}</label>
         <div class="save-query-link-row">
           <input type="text" class="save-query-link-input" readonly
                  id="ssb-link-input" value="${escapeHtml(ssbUrl)}">
-          <button class="btn-secondary" id="copy-ssb-link">Kopier</button>
+          <button class="btn-secondary" id="copy-ssb-link">${t('saveQuery.copy')}</button>
         </div>
         <a href="${escapeHtml(ssbUrl)}" target="_blank" rel="noopener"
            style="display:inline-block; margin-top: 6px; font-size: 0.9em;">
-          Åpne i SSBs statistikkbank ↗
+          ${escapeHtml(tpl('saveQuery.openSource', AppConfig.source.name))} ↗
         </a>
-      </div>
+      </div>` : ''}
     `;
 
     const makeCopyHandler = (inputId, btnId) => {
@@ -102,8 +106,8 @@ async function showSaveQueryDialog() {
         });
         const btn = document.getElementById(btnId);
         if (btn) {
-          btn.textContent = 'Kopiert!';
-          setTimeout(() => { btn.textContent = 'Kopier'; }, 2000);
+          btn.textContent = t('api.copied');
+          setTimeout(() => { btn.textContent = t('saveQuery.copy'); }, 2000);
         }
       });
     };
@@ -131,7 +135,7 @@ async function showSaveQueryDialog() {
     );
 
     const id = result.id || result.savedQuery?.id;
-    if (!id) throw new Error('Ingen ID i svar fra API');
+    if (!id) throw new Error(t('saveQuery.noIdInResponse'));
 
     _lastSavedQuery = { fingerprint, id };
     showLinks(id);
@@ -139,6 +143,6 @@ async function showSaveQueryDialog() {
   } catch (e) {
     logger.error('[TableDisplay] Failed to save query:', e);
     document.getElementById('save-query-content').innerHTML =
-      '<p class="error-message">Kunne ikke lagre spørringen: ' + escapeHtml(e.message) + '</p>';
+      '<p class="error-message">' + tpl('saveQuery.failed', escapeHtml(e.message)) + '</p>';
   }
 }

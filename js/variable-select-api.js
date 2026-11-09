@@ -11,12 +11,26 @@
 // ============================================================
 
 /**
- * Read the value of the checked radio in a pill group.
- * @param {string} name - The radio group's name attribute
- * @returns {string} Checked value, or '' if none
+ * Shortcut for explicitly picked periods in a GET URL, so the URL keeps
+ * following new data. top() and from() both describe an unbroken run up to the
+ * newest period, so any other selection can't use them: it would return other
+ * periods.
+ *
+ * @param {string} dimCode - Time dimension code
+ * @param {string[]} values - Picked periods, oldest first
+ * @returns {string|null} from(firstPeriod) or top(N), or null to list the periods
  */
-function getApiRadioValue(name) {
-  return document.querySelector('input[name="' + name + '"]:checked')?.value ?? '';
+function getTimeShortcut(dimCode, values) {
+  const index = VarSelect.tableMetadata?.dimension?.[dimCode]?.category?.index;
+  if (!index || values.length === 0) return null;
+
+  // N distinct picks that all sit within the last N positions are exactly the
+  // last N periods, which rules out both gaps and stopping early. Positions, not
+  // dates: a table with only 2000, 2005 and 2010 has no gap between them.
+  const newestPos = Math.max(...Object.values(index));
+  if (!values.every(code => newestPos - index[code] < values.length)) return null;
+
+  return values.length > 2 ? 'from(' + values[0] + ')' : 'top(' + values.length + ')';
 }
 
 /**
@@ -31,29 +45,29 @@ function updateQueryPreview() {
 
   const selection = getVariableSelection();
   const tableId = AppState.selectedTable.id;
-  const mode = getApiRadioValue('api-method') || 'get';
+  const mode = document.getElementById('api-method-toggle')?.value || 'get';
   const urlDecoded = document.getElementById('api-decode-url-cb')?.checked || false;
 
   // Collect format-specific params (valid for both GET and POST URLs)
-  const format = getApiRadioValue('api-output-format');
+  const format = document.getElementById('api-output-format')?.value || '';
   const formatsSupportingParams = ['csv', 'html', 'xlsx'];
   const fmtParams = [];
   let stubDims = undefined;
 
   if (formatsSupportingParams.includes(format)) {
-    const displayFormat = getApiRadioValue('api-display-format');
+    const displayFormat = document.getElementById('api-display-format')?.value;
     if (displayFormat) fmtParams.push(displayFormat);
 
-    if (document.getElementById('api-include-title-cb')?.checked) {
-      fmtParams.push('IncludeTitle');
-    }
+    const includeTitle = document.getElementById('api-include-title')?.value;
+    if (includeTitle) fmtParams.push(includeTitle);
 
     if (format === 'csv') {
-      const separator = getApiRadioValue('api-csv-separator');
+      const separator = document.getElementById('api-csv-separator')?.value;
       if (separator) fmtParams.push(separator);
     }
 
-    if (document.getElementById('api-layout-pivot-cb')?.checked) {
+    const layout = document.getElementById('api-table-layout')?.value;
+    if (layout === 'pivot') {
       const allDims = Object.keys(selection);
       if (allDims.length > 0) stubDims = allDims;
     }
@@ -65,13 +79,18 @@ function updateQueryPreview() {
   if (fmtParams.length > 0) postParams.append('outputFormatParams', fmtParams.join(','));
   if (stubDims) postParams.append('stub', stubDims.join(','));
 
-  // Build GET URL params (POST params + valueCodes + active codelists).
-  // Selections are arrays of explicit codes (specific mode) or the strings
-  // '*' (star mode) / 'top(N)' (Siste N mode) — all listed verbatim.
+  // Build GET URL params (POST params + valueCodes + active codelists)
+  // Time dimensions with explicit selections that form an unbroken run up to the newest
+  // period are replaced with from()/top() so the URL stays forward-looking; see
+  // getTimeShortcut().
   const params = new URLSearchParams(postParams);
   Object.keys(selection).forEach(dimension => {
     const values = selection[dimension];
-    const valueStr = Array.isArray(values) ? values.join(',') : values;
+    let valueStr = values;
+    if (Array.isArray(values)) {
+      const shortcut = isTimeDimension(dimension) && getTimeShortcut(dimension, values);
+      valueStr = shortcut || values.join(',');
+    }
     params.append('valueCodes[' + dimension + ']', valueStr);
   });
   const activeCodelistIds = AppState.activeCodelistIds || {};
@@ -79,7 +98,8 @@ function updateQueryPreview() {
     const codelistId = activeCodelistIds[dimension];
     if (codelistId) {
       params.append('codelist[' + dimension + ']', codelistId);
-      // Aggregation codelists need outputValues=aggregated to return summed values
+      // Same as buildPostBody: outputValues=aggregated for agg_* codelists, as the
+      // spec describes; harmless but not load-bearing at SSB
       if (isAggregationCodelistId(codelistId)) {
         params.append('outputValues[' + dimension + ']', 'aggregated');
       }
@@ -93,8 +113,10 @@ function updateQueryPreview() {
   const openBtn = document.getElementById('api-open-btn');
 
   if (mode === 'get') {
-    // GET mode: show full URL (with valueCodes)
-    // Keep the raw encoded URL for copy/open — the decoded display variant may not be a valid URL
+    // GET mode: show full URL (with valueCodes).
+    // Copy and open use the raw encoded URL from dataset.rawUrl: the decoded
+    // display variant is not a valid URL (a code like "105+" decodes to a "+",
+    // which the server reads as a space).
     previewUrl.dataset.rawUrl = fullGetUrl;
     previewUrl.textContent = urlDecoded ? decodeURIComponent(fullGetUrl) : fullGetUrl;
 
@@ -151,26 +173,40 @@ function updateQueryPreview() {
 
 /**
  * Set up event listeners for the enhanced API builder section.
- * Handles: format selector with conditional options, copy URL, copy curl, open in browser.
+ * Handles: format selector with conditional options, copy URL, open in browser,
+ * copy POST body, copy/open metadata URL.
  */
 function setupApiBuilderEvents() {
-  // Trim unsupported formats from the pill group. /config returns the live list
+  const formatSelect = document.getElementById('api-output-format');
+
+  // Trim unsupported formats from the dropdown. /config returns the live list
   // of dataFormats; api._applyConfig populates AppConfig.limits.dataFormats.
   // Empty value="" is JSON-stat2 (the default) and is always kept.
-  const formatGroup = document.getElementById('api-format-group');
-  if (formatGroup && Array.isArray(AppConfig.limits.dataFormats)) {
+  if (formatSelect && Array.isArray(AppConfig.limits.dataFormats)) {
     const allowed = new Set(AppConfig.limits.dataFormats.map(f => f.toLowerCase()));
     allowed.add('');
     allowed.add('json-stat2');
-    formatGroup.querySelectorAll('input[name="api-output-format"]').forEach(input => {
-      if (!allowed.has(input.value.toLowerCase())) input.closest('.api-pill')?.remove();
+    Array.from(formatSelect.options).forEach(opt => {
+      if (!allowed.has(opt.value.toLowerCase())) opt.remove();
     });
   }
 
-  // All option pills/checkboxes: one delegated listener updates visibility + preview
-  document.getElementById('api-builder-options')?.addEventListener('change', () => {
+  // Method toggle (GET/POST)
+  document.getElementById('api-method-toggle')?.addEventListener('change', () => {
+    updateQueryPreview();
+  });
+
+  // Output format selector — show/hide format-specific options
+  formatSelect?.addEventListener('change', () => {
     updateApiBuilderOptionsVisibility();
     updateQueryPreview();
+  });
+
+  // All sub-option selectors should also trigger URL update
+  ['api-display-format', 'api-include-title', 'api-csv-separator', 'api-table-layout'].forEach(id => {
+    document.getElementById(id)?.addEventListener('change', () => {
+      updateQueryPreview();
+    });
   });
 
   // Decode URL checkbox
@@ -187,7 +223,7 @@ function setupApiBuilderEvents() {
     }
   });
 
-  // Open data URL in new tab (GET only)
+  // Open data URL in new tab (GET only, raw encoded URL)
   document.getElementById('api-open-btn')?.addEventListener('click', () => {
     const url = document.getElementById('query-preview-url')?.dataset.rawUrl;
     if (url && url.startsWith('http')) {
@@ -225,25 +261,29 @@ function setupApiBuilderEvents() {
 /**
  * Show/hide format-specific option rows based on the selected output format.
  *
- * - csv, html, xlsx: show display format row + title/layout checkboxes
- * - csv only: also show separator row
+ * - csv, html, xlsx: show display format, title option, layout option
+ * - csv only: also show separator option
  * - Other formats: hide all sub-options
  */
 function updateApiBuilderOptionsVisibility() {
-  const format = getApiRadioValue('api-output-format');
+  const format = document.getElementById('api-output-format')?.value || '';
   const hasFormatParams = ['csv', 'html', 'xlsx'].includes(format);
 
   // Display format (UseCodes/UseTexts/UseCodesAndTexts)
   const displayOption = document.getElementById('api-display-option');
   if (displayOption) displayOption.style.display = hasFormatParams ? '' : 'none';
 
+  // Include title
+  const titleOption = document.getElementById('api-title-option');
+  if (titleOption) titleOption.style.display = hasFormatParams ? '' : 'none';
+
   // CSV separator (csv only)
   const separatorOption = document.getElementById('api-separator-option');
   if (separatorOption) separatorOption.style.display = format === 'csv' ? '' : 'none';
 
-  // Title + pivot layout checkboxes (csv, html, xlsx)
-  const extrasOption = document.getElementById('api-extras-option');
-  if (extrasOption) extrasOption.style.display = hasFormatParams ? '' : 'none';
+  // Table layout / stub+heading (csv, html, xlsx)
+  const layoutOption = document.getElementById('api-layout-option');
+  if (layoutOption) layoutOption.style.display = hasFormatParams ? '' : 'none';
 }
 
 /**
