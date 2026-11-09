@@ -66,7 +66,7 @@ async function renderSearchView(container) {
           ${Object.values(mh.subjectGroups).map(group => `
             <optgroup label="${escapeHtml(t('subject.group.' + group.id))}">
               ${group.subjects.map(subjectCode => {
-                const subjectName = t('subject.name.' + subjectCode) || mh.subjectNames[subjectCode];
+                const subjectName = t('subject.name.' + subjectCode);
                 const count = hitCounts[subjectCode] || 0;
                 const disabled = count === 0 ? 'disabled' : '';
                 const selected = filters.subjectFilter === subjectCode ? 'selected' : '';
@@ -190,7 +190,7 @@ async function _searchPerformSearch() {
   // Update URL without triggering re-render
   URLRouter.navigateTo('search', BrowserState.searchFiltersToParams(), false);
 
-  // Keep the page title in sync with the latest search term
+  // Keep the tab title in sync with the latest search term (the view isn't re-rendered)
   updatePageTitle(query ? [query] : [t('nav.search')]);
 
   // If no query and no filters, show welcome
@@ -309,7 +309,7 @@ function _searchGroupBySubject(tables, mh, preserveOrder) {
     if (!groups[code]) {
       groups[code] = {
         code: code,
-        label: t('subject.name.' + code) || mh.subjectNames[code] || code,
+        label: t('subject.name.' + code),
         tables: []
       };
     }
@@ -349,7 +349,7 @@ function _searchUpdateDropdownCounts() {
       ${Object.entries(mh.subjectGroups).map(([id, group]) => `
         <optgroup label="${escapeHtml(t('subject.group.' + group.id))}">
           ${group.subjects.map(subjectCode => {
-            const subjectName = t('subject.name.' + subjectCode) || mh.subjectNames[subjectCode];
+            const subjectName = t('subject.name.' + subjectCode);
             const count = hitCounts[subjectCode] || 0;
             const disabled = count === 0 ? 'disabled' : '';
             return `<option value="${subjectCode}" ${disabled}>${escapeHtml(subjectName)} (${count})</option>`;

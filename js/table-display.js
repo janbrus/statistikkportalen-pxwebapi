@@ -6,12 +6,25 @@
 let currentData = null;
 let currentFullMetadata = null;
 
+// Which content the table view is showing right now. Survives table re-renders
+// (e.g. after rotation or a language switch) so the chart stays selected; reset
+// to 'table' when the user navigates away (back-to-browser / back-to-variables)
+// and when the view renders another table (a table link in a note, history).
+let viewMode = 'table';   // 'table' | 'chart'
+let _viewModeTableId = null;   // the table viewMode belongs to
+
 /**
  * Render the table display view
  * @param {HTMLElement} container - Container element
  */
 async function renderTableDisplay(container) {
   logger.log('[TableDisplay] Rendering table display');
+  const isCurrent = renderGuard();
+
+  // The container is about to be overwritten — kill any chart that was
+  // attached to a now-orphan canvas (e.g. after a language switch that
+  // re-entered this view). Safe no-op when no chart exists.
+  destroyChart();
 
   if (!AppState.selectedTable || !AppState.variableSelection) {
     showError(t('error.noTableOrSel'));
@@ -23,7 +36,14 @@ async function renderTableDisplay(container) {
   const table = AppState.selectedTable;
   updatePageTitle([extractTableTitle(table.label)]);
 
+  // Chart mode carries over only within one table
+  if (table.id !== _viewModeTableId) {
+    viewMode = 'table';
+    _viewModeTableId = table.id;
+  }
+
   await BrowserState.init();
+  if (!isCurrent()) return;
 
   // If we arrived via direct link/refresh, the label was a placeholder — update it now
   const realTable = BrowserState.allTables.find(t => t.id === table.id);
@@ -56,6 +76,8 @@ async function renderTableDisplay(container) {
 
   // Set up back buttons
   document.getElementById('back-to-browser')?.addEventListener('click', () => {
+    destroyChart();
+    viewMode = 'table';
     currentData = null;
     currentFullMetadata = null;
     const ref = AppState.navigationRef || 'home';
@@ -67,11 +89,13 @@ async function renderTableDisplay(container) {
   });
 
   document.getElementById('back-to-variables')?.addEventListener('click', () => {
+    destroyChart();
+    viewMode = 'table';
     AppState.setView('variables');
   });
 
   // Fetch and display data
-  await loadTableData();
+  await loadTableData(isCurrent);
 }
 
 /**
@@ -81,8 +105,13 @@ async function renderTableDisplay(container) {
  * for all dimensions. Dimensions with extension.elimination=true that the user
  * left unselected are intentionally omitted, causing the API to aggregate
  * across all values for those dimensions (they won't appear in the result).
+ *
+ * Nothing shared (currentData, currentFullMetadata, AppState.tableLayout, the
+ * DOM) is touched until both fetches are done and isCurrent() still holds.
+ *
+ * @param {function(): boolean} isCurrent - renderGuard() of the calling render
  */
-async function loadTableData() {
+async function loadTableData(isCurrent) {
   const tableId = AppState.selectedTable.id;
   const selection = AppState.variableSelection;
 
@@ -98,17 +127,21 @@ async function loadTableData() {
     AppState.tableData = null;
   } else {
     data = await safeApiCall(
-      () => api.getTableData(tableId, selection, getCurrentApiLang(), AppState.activeCodelistIds),
-      t('error.fetchData')
+      // Cancelled if the user moves on while it loads (the data is never cached)
+      () => api.getTableData(tableId, selection, getCurrentApiLang(), AppState.activeCodelistIds,
+        { signal: isCurrent.signal }),
+      t('error.fetchData'),
+      document.getElementById('data-container')
     );
   }
 
-  if (!data || !data.value) {
+  if (!isCurrent()) return;
+  // On an API error safeApiCall has already shown the message, in the view too
+  if (!data) return;
+
+  if (!data.value) {
     logger.error('[TableDisplay] Invalid data format:', data);
-    const container = document.getElementById('data-container');
-    if (container) {
-      container.innerHTML = '<p class="error-message">' + t('error.fetchData') + '</p>';
-    }
+    showViewError(document.getElementById('data-container'), t('error.fetchData'));
     return;
   }
 
@@ -120,22 +153,25 @@ async function loadTableData() {
     return;
   }
 
-  currentData = data;
-
   // Fetch full metadata (from cache) for display
+  let fullMetadata = null;
   try {
-    currentFullMetadata = await api.getTableMetadata(tableId, true, getCurrentApiLang());
-    // Update title if it was set as a placeholder during direct URL navigation
-    if (currentFullMetadata?.label && AppState.selectedTable) {
-      AppState.selectedTable.label = currentFullMetadata.label;
-      const h2 = document.querySelector('.view-header h2');
-      if (h2) h2.textContent = extractTableTitle(currentFullMetadata.label);
-      const bc = document.querySelector('.breadcrumb-current');
-      if (bc) bc.textContent = AppState.selectedTable.id + ' ' + extractTableTitle(currentFullMetadata.label);
-    }
+    fullMetadata = await api.getTableMetadata(tableId, true, getCurrentApiLang());
   } catch (e) {
     logger.warn('[TableDisplay] Could not load full metadata:', e);
-    currentFullMetadata = null;
+  }
+  if (!isCurrent()) return;
+
+  currentData = data;
+  currentFullMetadata = fullMetadata;
+
+  // Update title if it was set as a placeholder during direct URL navigation
+  if (currentFullMetadata?.label && AppState.selectedTable) {
+    AppState.selectedTable.label = currentFullMetadata.label;
+    const h2 = document.querySelector('.view-header h2');
+    if (h2) h2.textContent = extractTableTitle(currentFullMetadata.label);
+    const bc = document.querySelector('.breadcrumb-current');
+    if (bc) bc.textContent = AppState.selectedTable.id + ' ' + extractTableTitle(currentFullMetadata.label);
   }
 
   logger.log('[TableDisplay] Data loaded:', data);
@@ -165,45 +201,68 @@ async function loadTableData() {
 }
 
 /**
- * Determine default layout for table
+ * Determine default layout for table.
+ *
+ * Two modes, switched on the product of selected non-time dimension sizes:
+ *
+ *   Compact mode (product < 16): ALL non-time dims go to columns, with
+ *     Statistikkvariabel on top and the rest narrowest-first beneath it.
+ *     Time runs down the rows. Each metric × breakdown combination gets
+ *     its own column, so a small table reads comfortably left-to-right.
+ *
+ *   Standard mode (product ≥ 16): only Statistikkvariabel + the narrowest
+ *     non-time dim go to columns; time + any wider non-time dims go to
+ *     rows. Keeps the column count tractable on wide tables.
+ *
+ * In both modes Statistikkvariabel is the first column entry → renders as
+ * the topmost <th> row.
+ *
+ * Falls back gracefully when role.metric or role.time is absent.
+ *
  * @param {object} data - JSON-Stat2 data
  * @returns {object} - Layout object with rows and columns arrays
  */
 function determineDefaultLayout(data) {
   const dimensions = data.id;
 
-  // Use the JSON-stat2 role.time field to identify the time dimension — API-agnostic,
-  // works regardless of what the dimension code is named in any language or instance.
-  const timeDimCode = data.role?.time?.[0];
-  const timeDimIndex = timeDimCode != null ? dimensions.indexOf(timeDimCode) : -1;
+  if (dimensions.length === 0) return { rows: [], columns: [] };
+  if (dimensions.length === 1) return { rows: [], columns: dimensions };
 
-  if (timeDimIndex !== -1) {
-    // Time dimension as rows (one row per period)
-    const nonTimeDims = dimensions.filter((_, i) => i !== timeDimIndex);
-    if (nonTimeDims.length > 0) {
-      return {
-        rows: [dimensions[timeDimIndex]],
-        columns: nonTimeDims
-      };
-    } else {
-      return {
-        rows: [dimensions[timeDimIndex]],
-        columns: []
-      };
-    }
-  } else if (dimensions.length > 1) {
-    // Last dimension as column
-    return {
-      rows: dimensions.slice(0, -1),
-      columns: [dimensions[dimensions.length - 1]]
-    };
+  const metricDim = data.role?.metric?.[0];
+  const timeDim = data.role?.time?.[0];
+  const sizeByDim = Object.fromEntries(dimensions.map((d, i) => [d, data.size[i]]));
+
+  // Non-metric, non-time dims sorted narrowest-first.
+  const nonMetricNonTime = dimensions
+    .filter(d => d !== metricDim && d !== timeDim)
+    .sort((a, b) => sizeByDim[a] - sizeByDim[b]);
+
+  // Product of all non-time selected counts. Defines how wide the column
+  // axis would become if we stacked every non-time dim there.
+  const nonTimeProduct = dimensions
+    .filter(d => d !== timeDim)
+    .reduce((acc, d) => acc * sizeByDim[d], 1);
+
+  let columns, rows;
+  if (nonTimeProduct < 16) {
+    columns = metricDim ? [metricDim, ...nonMetricNonTime] : nonMetricNonTime;
+    rows = timeDim ? [timeDim] : [];
   } else {
-    // Single dimension: show as column
-    return {
-      rows: [],
-      columns: dimensions
-    };
+    columns = [];
+    if (metricDim) columns.push(metricDim);
+    if (nonMetricNonTime.length > 0) columns.push(nonMetricNonTime[0]);
+    rows = dimensions.filter(d => !columns.includes(d));
   }
+
+  // Degenerate: no row dim (no time dim, or every dim was claimed by cols).
+  // Demote the last (narrowest) col to a row so the table has a vertical
+  // axis. Statistikkvariabel stays in cols because it's never the last one
+  // in the ordered list.
+  if (rows.length === 0 && columns.length > 0) {
+    rows = [columns.pop()];
+  }
+
+  return { rows, columns };
 }
 
 /**
@@ -213,8 +272,18 @@ function displayData() {
   const container = document.getElementById('data-container');
   if (!container || !currentData) return;
 
+  // Tear down any previous chart instance before swapping innerHTML —
+  // otherwise Chart.js logs "Canvas is already in use" when the user
+  // toggles back into chart mode after a rotation/re-render.
+  destroyChart();
+
   // Build metadata section
   let html = buildMetadataSection();
+
+  // Chart toggle is only meaningful for time-series tables. Hide it
+  // entirely when there's no time role (e.g. cross-section snapshots,
+  // or selections where time was eliminated).
+  const hasTimeDim = !!currentData.role?.time?.[0];
 
   // Build control bar
   html += `
@@ -223,6 +292,13 @@ function displayData() {
         <button id="rotate-table-btn" class="btn-secondary">
           ${t('table.rotate')}
         </button>
+        ${hasTimeDim ? `
+          <button id="chart-toggle-btn" class="btn-secondary${viewMode === 'chart' ? ' btn-active' : ''}"
+                  title="${escapeHtml(t('chart.toggleTitle'))}"
+                  aria-pressed="${viewMode === 'chart'}">
+            ${t('chart.toggle')}
+          </button>
+        ` : ''}
         <button id="export-quick-btn" class="btn-primary">
           ${t('table.download')}
         </button>
@@ -239,8 +315,22 @@ function displayData() {
     </div>
   `;
 
-  // Build the table
-  html += buildHtmlTable();
+  // Body: chart or table
+  if (viewMode === 'chart' && hasTimeDim) {
+    // Reserve a slot above the canvas for the >12-lines warning so we can
+    // populate it after Chart.js reports the actual line count.
+    html += `
+      <p id="chart-warning" class="chart-warning info-message" style="display:none;"></p>
+      <div class="chart-container">
+        <canvas id="chart-canvas"></canvas>
+      </div>
+    `;
+  } else {
+    html += buildHtmlTable();
+  }
+
+  // Mandatory notes below the body: always visible, but after the figures
+  html += buildMandatoryNotes();
 
   container.innerHTML = html;
 
@@ -248,6 +338,26 @@ function displayData() {
   document.getElementById('rotate-table-btn')?.addEventListener('click', () => {
     openRotationDialog();
   });
+
+  document.getElementById('chart-toggle-btn')?.addEventListener('click', () => {
+    viewMode = (viewMode === 'chart') ? 'table' : 'chart';
+    displayData();
+  });
+
+  // Render the chart after the DOM is in place. Chart.js needs the canvas
+  // to be sized (the .chart-container fixes its height), and we want to
+  // show/hide the >12-line warning based on the actual dataset count.
+  if (viewMode === 'chart' && hasTimeDim) {
+    const canvas = document.getElementById('chart-canvas');
+    const result = renderChart(canvas, currentData, AppState.tableLayout);
+    if (result.tooManyLines) {
+      const warn = document.getElementById('chart-warning');
+      if (warn) {
+        warn.textContent = tpl('chart.tooManyLines', result.lineCount);
+        warn.style.display = '';
+      }
+    }
+  }
 
   document.getElementById('save-query-btn')?.addEventListener('click', () => {
     showSaveQueryDialog();
@@ -293,6 +403,7 @@ function buildHtmlTable() {
   const metricRowIdx = metricDim != null ? layout.rows.indexOf(metricDim) : -1;
   const metricColIdx = metricDim != null ? layout.columns.indexOf(metricDim) : -1;
   const tableDefaultDecimals = data.extension?.px?.decimals ?? null;
+  const metricUnit = metricDim != null ? data.dimension[metricDim]?.category?.unit : null;
 
   logger.log('[TableDisplay] Row headers:', rowHeaders.length);
   logger.log('[TableDisplay] Column headers:', colHeaders.length);
@@ -363,20 +474,23 @@ function buildHtmlTable() {
       html += '<th class="row-header">' + escapeHtml(label) + '</th>';
     });
 
-    // Data cells
+    // Data cells. A status code either stands in for a missing value
+    // (".", "..", ":", "...", "-" come with value null) or flags a number that
+    // exists ("*" = preliminary, an SSB data note): then the number is shown
+    // with the flag after it, never replaced by it.
     colHeaders.forEach(colHeader => {
       const status = getDataStatus(rowHeader, colHeader);
-      if (status) {
-        html += '<td class="data-cell suppressed-value" title="' + escapeHtml(suppressedLabel(status)) + '">' + escapeHtml(status) + '</td>';
+      const value = getDataValue(rowHeader, colHeader);
+      const titleAttr = status ? ' title="' + escapeHtml(statusLabel(status)) + '"' : '';
+      if (status && !Number.isFinite(value)) {
+        html += '<td class="data-cell suppressed-value"' + titleAttr + '>' + escapeHtml(status) + '</td>';
       } else {
-        const value = getDataValue(rowHeader, colHeader);
         const metricCode = metricRowIdx !== -1 ? rowHeader.codes[metricRowIdx]
                          : metricColIdx !== -1 ? colHeader.codes[metricColIdx]
                          : undefined;
-        const decimals = metricCode !== undefined
-          ? (data.dimension[metricDim]?.category?.unit?.[metricCode]?.decimals ?? tableDefaultDecimals)
-          : tableDefaultDecimals;
-        html += '<td class="data-cell">' + formatNumber(value, decimals) + '</td>';
+        const decimals = resolveMetricDecimals(metricDim, metricCode, metricUnit, tableDefaultDecimals);
+        const flag = status ? ' ' + escapeHtml(status) : '';
+        html += '<td class="data-cell"' + titleAttr + '>' + formatNumber(value, decimals) + flag + '</td>';
       }
     });
 
@@ -387,6 +501,40 @@ function buildHtmlTable() {
   html += '</table></div>';
 
   return html;
+}
+
+/**
+ * Resolve the decimals setting for a metric cell.
+ *
+ * The straightforward lookup is `unit[metricCode].decimals`. That works for
+ * vs_ codelists (subset of originals — code is present in unit{}) and for
+ * tables without any codelist. It breaks for agg_ codelists: the API returns
+ * data keyed by aggregate codes (e.g. "AGG_TOTAL"), but the unit{} map is
+ * keyed by the underlying original codes, so the direct lookup misses and
+ * per-metric precision silently falls back to the table-wide default.
+ *
+ * Fallback path: walk the active agg_ codelist's valueMap to find the
+ * underlying originals for this aggregate, and pick the max of their decimals
+ * — under-displaying precision loses information silently; trailing zeros
+ * are visible and recoverable.
+ */
+function resolveMetricDecimals(metricDim, metricCode, metricUnit, tableDefaultDecimals) {
+  if (metricCode === undefined || !metricUnit) return tableDefaultDecimals;
+
+  const direct = metricUnit[metricCode]?.decimals;
+  if (direct != null) return direct;
+
+  // Aggregate-code path: look up the underlying originals via the active codelist.
+  const codelistInfo = (typeof VarSelect !== 'undefined') ? VarSelect.activeCodelists?.[metricDim] : null;
+  if (codelistInfo?.isAggregated) {
+    const aggValue = codelistInfo.values.find(v => v.code === metricCode);
+    const candidates = (aggValue?.valueMap || [])
+      .map(orig => metricUnit[orig]?.decimals)
+      .filter(d => d != null);
+    if (candidates.length) return Math.max(...candidates);
+  }
+
+  return tableDefaultDecimals;
 }
 
 /**
@@ -464,10 +612,11 @@ function getDataValue(rowHeader, colHeader) {
 }
 
 /**
- * Get suppressed-value status code for a cell (JSON-stat2 `status` field)
+ * Get the status code for a cell (JSON-stat2 `status` field). It can stand in
+ * for a missing value (".", "..", ":") or flag a number that exists ("*").
  * @param {object} rowHeader - Row header combination
  * @param {object} colHeader - Column header combination
- * @returns {string|null} - Status symbol (e.g. ".", ":", "..") or null
+ * @returns {string|null} - Status symbol (e.g. ".", ":", "..", "*") or null
  */
 function getDataStatus(rowHeader, colHeader) {
   if (!currentData || !currentData.status) return null;
@@ -493,20 +642,27 @@ function getDataStatus(rowHeader, colHeader) {
 }
 
 /**
- * Return a Norwegian label for a JSON-stat2 suppressed-value status code
+ * Label for a JSON-stat2 status code, in the UI language. Used as the cell
+ * tooltip in the table and in the chart tooltip.
  * @param {string} code - Status code
  * @returns {string}
  */
-function suppressedLabel(code) {
-  // SSB JSON-stat2 status conventions:
-  //   "."  = ikke mulig å oppgi tall (not applicable)
-  //   ".." = tallgrunnlag mangler   (not available)
-  //   ":"  = konfidensielt          (confidential)
+function statusLabel(code) {
+  // SSB's standard symbols (ssb.no/diverse/standardtegn-i-tabeller):
+  //   "."   = ikke mulig å oppgi tall              (value null)
+  //   ".."  = tallgrunnlag mangler                 (value null)
+  //   ":"   = vises ikke av konfidensialitetshensyn (value null)
+  //   "..." = oppgave mangler foreløpig (pre-2021)  (value null)
+  //   "-"   = null (pre-2021)                       (value null; shown as "-", not counted as 0)
+  //   "*"   = foreløpig tall — a flag on a cell that HAS a number
   switch (code) {
-    case '.':  return t('table.notApplicable');
-    case '..': return t('table.notAvailable');
-    case ':':  return t('table.confidential');
-    default:   return code;
+    case '.':   return t('table.notApplicable');
+    case '..':  return t('table.notAvailable');
+    case ':':   return t('table.confidential');
+    case '...': return t('table.notYetAvailable');
+    case '-':   return t('table.nil');
+    case '*':   return t('table.preliminary');
+    default:    return code;
   }
 }
 

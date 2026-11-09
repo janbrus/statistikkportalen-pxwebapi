@@ -14,16 +14,11 @@
 async function renderTopicView(container) {
   // Ensure data is loaded
   if (!BrowserState.isLoaded) {
-    // Pre-rendret SEO-emneside for samme rute: behold det statiske innholdet
-    // som plassholder under lastingen i stedet for spinner, så siden ikke
-    // blinker ved oppstart (se scripts/generate-seo-pages.mjs)
-    if (!seoContentMatchesRoute(AppState.topicPath)) {
-      container.innerHTML = `
-        <div class="loading-spinner">
-          <p>${t('loading.tables')}</p>
-        </div>
-      `;
-    }
+    container.innerHTML = `
+      <div class="loading-spinner">
+        <p>${t('loading.tables')}</p>
+      </div>
+    `;
     try {
       await BrowserState.init();
     } catch (error) {
@@ -60,8 +55,8 @@ async function renderTopicView(container) {
     updatePageTitle(lastCrumb ? [lastCrumb.label] : [t('nav.subjects')]);
   }
 
-  // Antall stinivåer som vises som navigasjonskort før tabellisten
-  // (konfigurerbart per instans; SSB-standard er 2)
+  // Path levels shown as navigation cards before the table list
+  // (per instance: 2 for SSB, 1 for SCB's shallower hierarchy)
   const cardDepth = AppConfig.ui?.topicCardDepth ?? 2;
 
   if (isGroupId && path.length === 1) {
@@ -71,12 +66,29 @@ async function renderTopicView(container) {
     // Level 2: Show subtopics for a subject
     _topicRenderSubtopics(container, mh, path);
   } else if (path.length <= cardDepth) {
-    // Card levels below subject: categories or fall through to table list
+    // Card levels below the subject: categories, or the table list when there are none
     _topicRenderCategories(container, mh, path);
   } else {
     // Below cardDepth: Table list with hierarchy
     _topicRenderTables(container, mh, path);
   }
+}
+
+/**
+ * Attach click + keyboard (Enter/Space) navigation to card elements.
+ * The cards are divs with tabindex="0" role="link", so keyboard
+ * activation must be wired manually alongside the click handler.
+ */
+function _topicAttachCardNavigation(container, selector, navigate) {
+  container.querySelectorAll(selector).forEach(card => {
+    card.addEventListener('click', () => navigate(card));
+    card.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault(); // Space would otherwise scroll the page
+        navigate(card);
+      }
+    });
+  });
 }
 
 /**
@@ -104,7 +116,7 @@ function _topicRenderGroupSubjects(container, mh, groupId) {
 
       <div class="subtopic-cards">
         ${subjects.map(subject => `
-          <div class="subtopic-card" data-subject-id="${subject.id}">
+          <div class="subtopic-card" tabindex="0" role="link" data-subject-id="${subject.id}">
             <h3>${escapeHtml(subject.label)}</h3>
             <p>${subject.tableCount} ${subject.tableCount === 1 ? t('unit.table.one') : t('unit.table.many')}</p>
             <span class="card-arrow">&rarr;</span>
@@ -116,13 +128,11 @@ function _topicRenderGroupSubjects(container, mh, groupId) {
 
   _topicAttachCommonListeners(container);
 
-  container.querySelectorAll('.subtopic-card').forEach(card => {
-    card.addEventListener('click', () => {
-      const subjectId = card.dataset.subjectId;
-      BrowserState.resetTopicFilters();
-      URLRouter.navigateTo('topic/' + subjectId, {});
-      URLRouter.handleRoute();
-    });
+  _topicAttachCardNavigation(container, '.subtopic-card', (card) => {
+    const subjectId = card.dataset.subjectId;
+    BrowserState.resetTopicFilters();
+    URLRouter.navigateTo('topic/' + subjectId, {});
+    URLRouter.handleRoute();
   });
 }
 
@@ -132,7 +142,7 @@ function _topicRenderGroupSubjects(container, mh, groupId) {
 function _topicRenderSubtopics(container, mh, path) {
   const subjectCode = path[0];
   const subtopics = mh.getSubtopicsForSubject(subjectCode);
-  const subjectName = t('subject.name.' + subjectCode) || mh.subjectNames[subjectCode];
+  const subjectName = t('subject.name.' + subjectCode);
   const breadcrumbs = mh.getBreadcrumbs([subjectCode]);
 
   container.innerHTML = `
@@ -146,7 +156,7 @@ function _topicRenderSubtopics(container, mh, path) {
 
       <div class="subtopic-cards">
         ${subtopics.map(subtopic => `
-          <div class="subtopic-card" data-subtopic-id="${subtopic.id}">
+          <div class="subtopic-card" tabindex="0" role="link" data-subtopic-id="${subtopic.id}">
             <h3>${escapeHtml(subtopic.label)}</h3>
             <p>${subtopic.tableCount} ${subtopic.tableCount === 1 ? t('unit.table.one') : t('unit.table.many')}</p>
             <span class="card-arrow">&rarr;</span>
@@ -158,13 +168,11 @@ function _topicRenderSubtopics(container, mh, path) {
 
   _topicAttachCommonListeners(container);
 
-  container.querySelectorAll('.subtopic-card').forEach(card => {
-    card.addEventListener('click', () => {
-      const subtopicId = card.dataset.subtopicId;
-      BrowserState.resetTopicFilters();
-      URLRouter.navigateTo('topic/' + subjectCode + '/' + subtopicId, {});
-      URLRouter.handleRoute();
-    });
+  _topicAttachCardNavigation(container, '.subtopic-card', (card) => {
+    const subtopicId = card.dataset.subtopicId;
+    BrowserState.resetTopicFilters();
+    URLRouter.navigateTo('topic/' + subjectCode + '/' + subtopicId, {});
+    URLRouter.handleRoute();
   });
 }
 
@@ -193,7 +201,7 @@ function _topicRenderCategories(container, mh, path) {
 
       <div class="category-cards">
         ${categories.map(cat => `
-          <div class="category-card" data-category-id="${cat.id}">
+          <div class="category-card" tabindex="0" role="link" data-category-id="${cat.id}">
             <h3>${escapeHtml(cat.label)}</h3>
             <p>${cat.tableCount} ${cat.tableCount === 1 ? t('unit.table.one') : t('unit.table.many')}</p>
             <span class="card-arrow">&rarr;</span>
@@ -205,13 +213,11 @@ function _topicRenderCategories(container, mh, path) {
 
   _topicAttachCommonListeners(container);
 
-  container.querySelectorAll('.category-card').forEach(card => {
-    card.addEventListener('click', () => {
-      const categoryId = card.dataset.categoryId;
-      BrowserState.resetTopicFilters();
-      URLRouter.navigateTo('topic/' + path.join('/') + '/' + categoryId, {});
-      URLRouter.handleRoute();
-    });
+  _topicAttachCardNavigation(container, '.category-card', (card) => {
+    const categoryId = card.dataset.categoryId;
+    BrowserState.resetTopicFilters();
+    URLRouter.navigateTo('topic/' + path.join('/') + '/' + categoryId, {});
+    URLRouter.handleRoute();
   });
 }
 

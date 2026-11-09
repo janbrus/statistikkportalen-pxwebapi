@@ -4,31 +4,21 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Statistikkportalen</title>
-  <meta name="description" content="Et uoffisielt verktøy for bedre tilgang til SSBs statistikkbank og åpne data." id="meta-description">
-  <link rel="canonical" href="https://statistikkportalen.no/">
-  <meta property="og:title" content="Statistikkportalen">
-  <meta property="og:description" content="Et uoffisielt verktøy for bedre tilgang til SSBs statistikkbank og åpne data.">
-  <meta property="og:url" content="https://statistikkportalen.no/">
-  <meta property="og:type" content="website">
-  <meta property="og:site_name" content="Statistikkportalen">
-  <meta property="og:locale" content="nb_NO">
+  <meta name="description" content="Et uoffisielt verktøy som gir deg bedre tilgang til SSBs åpne data." id="meta-description">
 
-  <!-- Uten JavaScript: skjul JS-avhengige småelementer (footer-lenker o.l.) -->
-  <noscript><style>.js-only { display: none !important; }</style></noscript>
-
-  <!-- Analytics injiseres fra AppConfig.analytics (se js/config.js) rett etter
-       config.js er lastet nederst i <body>. -->
+  <!-- Analytics: injected from AppConfig.analytics (js/config.js) right after
+       config.js has loaded, at the end of <body>. -->
 
   <!-- Stylesheets -->
-  <link rel="stylesheet" href="css/main.css">
-  <link rel="stylesheet" href="css/table.css">
-  <link rel="stylesheet" href="css/menu-navigator.css">
+  <link rel="stylesheet" href="css/main.css?v=1.5.0">
+  <link rel="stylesheet" href="css/table.css?v=1.5.0">
+  <link rel="stylesheet" href="css/menu-navigator.css?v=1.5.0">
 </head>
 <body>
   <!-- Header -->
   <header>
     <div class="header-content">
-      <h1><a href="#home" id="header-home-link" id="header-title">Statistikkportalen</a></h1>
+      <h1><a href="#home" id="header-home-link">Statistikkportalen</a></h1>
       <p class="subtitle" id="header-subtitle">Et uoffisielt verktøy som gir deg bedre tilgang til SSBs åpne data.</p>
     </div>
     <div class="header-lang" id="header-lang"></div>
@@ -36,14 +26,14 @@
 
   <!-- Main Application -->
   <main id="app">
-    <noscript>
-      <p class="noscript-notice">Søk og interaktiv tabellvisning krever JavaScript, men emneoversikten nedenfor kan brukes uten.</p>
-    </noscript>
-
     <!-- Loading Indicator -->
     <div id="loading-indicator" style="display: none;">
       Laster...
     </div>
+
+    <!-- Calls waiting for the rate window (utils.js updateRateWaitNotice). A live
+         region that stays in the page: keep it empty here, not even a space -->
+    <div id="rate-wait-notice" class="rate-wait-notice" role="status"></div>
 
     <!-- Error Display -->
     <div id="error-display"></div>
@@ -60,25 +50,27 @@
     <a id="footer-license-link" href="https://www.ssb.no/diverse/lisens" target="_blank" rel="noopener noreferrer">(CC BY 4.0)</a>
     <span class="footer-separator">·</span>
     <a href="https://github.com/avocodetoast/statistikkportalen" target="_blank" rel="noopener noreferrer">GitHub</a>
-    <span class="footer-separator js-only">·</span>
-    <a href="#" id="clear-cache-link" class="js-only"></a>
-    <span class="footer-separator js-only">·</span>
-    <span id="app-version" class="js-only"></span></p>
+    <span class="footer-separator">·</span>
+    <a href="#hjelp" id="footer-help-link" class="app-help-link"></a>
+    <span class="footer-separator">·</span>
+    <a href="#" id="clear-cache-link"></a>
+    <span class="footer-separator">·</span>
+    <span id="app-version"></span></p>
   </footer>
 
   <!-- JavaScript - Load in correct order -->
   <!-- Cache busting: ?v= must match VERSION in version.js. When bumping VERSION, update all ?v= here too. -->
   <script src="js/version.js"></script>
-  <script src="js/config.js?v=1.4.5"></script>
+  <script src="js/config.js?v=1.5.0"></script>
 
-  <!-- Analytics: injiser Umami-scriptet fra AppConfig.analytics. Slås av
-       ved å sette analytics til null (eller tomt scriptUrl/websiteId) i config.js. -->
+  <!-- Analytics: add the Umami script from AppConfig.analytics. Set analytics to
+       null (or leave scriptUrl/websiteId empty) in config.js to turn it off. -->
   <script>
     (function () {
-      var a = (window.AppConfig && window.AppConfig.analytics) || null;
+      var a = window.AppConfig && window.AppConfig.analytics;
       if (!a || !a.scriptUrl || !a.websiteId) return;
+      // A script added from code never blocks parsing, so no defer/async needed
       var s = document.createElement('script');
-      s.defer = true;
       s.src = a.scriptUrl;
       s.setAttribute('data-website-id', a.websiteId);
       if (a.domains) s.setAttribute('data-domains', a.domains);
@@ -87,49 +79,44 @@
     })();
   </script>
 
-  <script src="js/translations.js?v=1.4.5"></script>
-  <script src="js/cache.js?v=1.4.5"></script>
-  <script src="js/api.js?v=1.4.5"></script>
-  <script src="js/utils.js?v=1.4.5"></script>
-  <script src="js/router.js?v=1.4.5"></script>
-  <script src="js/seo-head.js?v=1.4.5"></script>
-  <script src="js/subjects.js?v=1.4.5"></script>
-  <script src="js/menu-hierarchy.js?v=1.4.5"></script>
-  <script src="js/browser-state.js?v=1.4.5"></script>
-  <script src="js/menu-bar.js?v=1.4.5"></script>
-  <script src="js/front-page.js?v=1.4.5"></script>
-  <script src="js/synonyms.js?v=1.4.5"></script>
-  <script src="js/search-enhanced.js?v=1.4.5"></script>
-  <script src="js/search-view.js?v=1.4.5"></script>
-  <script src="js/topic-view.js?v=1.4.5"></script>
-  <script src="js/variable-select-state.js?v=1.4.5"></script>
-  <script src="js/variable-select-status.js?v=1.4.5"></script>
-  <script src="js/variable-select-codelists.js?v=1.4.5"></script>
-  <script src="js/variable-select-render.js?v=1.4.5"></script>
-  <script src="js/variable-select-events.js?v=1.4.5"></script>
-  <script src="js/variable-select-api.js?v=1.4.5"></script>
-  <script src="js/variable-select.js?v=1.4.5"></script>
-  <script src="js/table-display.js?v=1.4.5"></script>
-  <script src="js/table-metadata.js?v=1.4.5"></script>
-  <script src="js/table-save-query.js?v=1.4.5"></script>
-  <script src="js/table-rotation.js?v=1.4.5"></script>
-  <script src="js/export.js?v=1.4.5"></script>
+  <script src="js/translations.js?v=1.5.0"></script>
+  <script src="js/cache.js?v=1.5.0"></script>
+  <script src="js/api.js?v=1.5.0"></script>
+  <script src="js/utils.js?v=1.5.0"></script>
+  <script src="js/router.js?v=1.5.0"></script>
+  <script src="js/subjects.js?v=1.5.0"></script>
+  <script src="js/menu-hierarchy.js?v=1.5.0"></script>
+  <script src="js/browser-state.js?v=1.5.0"></script>
+  <script src="js/menu-bar.js?v=1.5.0"></script>
+  <script src="js/front-page.js?v=1.5.0"></script>
+  <script src="js/help-view.js?v=1.5.0"></script>
+  <script src="js/synonyms.js?v=1.5.0"></script>
+  <script src="js/search-enhanced.js?v=1.5.0"></script>
+  <script src="js/search-view.js?v=1.5.0"></script>
+  <script src="js/topic-view.js?v=1.5.0"></script>
+  <script src="js/variable-select-state.js?v=1.5.0"></script>
+  <script src="js/variable-select-status.js?v=1.5.0"></script>
+  <script src="js/variable-select-codelists.js?v=1.5.0"></script>
+  <script src="js/variable-select-render.js?v=1.5.0"></script>
+  <script src="js/variable-select-events.js?v=1.5.0"></script>
+  <script src="js/variable-select-api.js?v=1.5.0"></script>
+  <script src="js/variable-select.js?v=1.5.0"></script>
+  <script src="js/table-display.js?v=1.5.0"></script>
+  <script src="js/table-metadata.js?v=1.5.0"></script>
+  <script src="js/table-save-query.js?v=1.5.0"></script>
+  <script src="js/table-rotation.js?v=1.5.0"></script>
+  <script src="js/export.js?v=1.5.0"></script>
+  <script src="js/vendor/chart.umd.min.js?v=1.5.0"></script>
+  <script src="js/chart-view.js?v=1.5.0"></script>
 
   <!-- Application Initialization -->
   <script>
     // Re-applies all language-sensitive static UI strings (tagline, footer).
     // Called on init and whenever the language is switched.
     function applyTranslatableUI() {
-      const rawTagline = AppConfig.app?.tagline || '';
-      const appTagline = (typeof rawTagline === 'object')
-        ? (rawTagline[currentLanguage] ?? rawTagline['nb'] ?? '')
-        : rawTagline;
+      const appTagline = localized(AppConfig.app?.tagline);
 
-      // Pre-rendrede SEO-sider (se scripts/generate-seo-pages.mjs) har en unik
-      // beskrivelse som må bevares i Googlebots rendrede snapshot.
-      if (!window.__SEO_TOPIC_PATH__ && !window.__SEO_TABLE_ID__) {
-        document.getElementById('meta-description').setAttribute('content', appTagline);
-      }
+      document.getElementById('meta-description').setAttribute('content', appTagline);
       document.getElementById('header-subtitle').textContent = appTagline;
 
       const dataFromEl = document.getElementById('footer-data-from');
@@ -140,6 +127,9 @@
         clearLink.textContent = t('cache.clear');
         clearLink.title = t('cache.clearTooltip');
       }
+
+      const helpLink = document.getElementById('footer-help-link');
+      if (helpLink) helpLink.textContent = t('nav.help');
     }
 
     // Initialize app when DOM is ready
@@ -148,11 +138,7 @@
       const appName = AppConfig.app?.name || 'Statistikkportalen';
       const src = AppConfig.source || {};
 
-      // Pre-rendrede SEO-sider har en unik tittel som ikke skal overskrives
-      // med den generiske (updatePageTitle setter emnespesifikk tittel senere).
-      if (!window.__SEO_TOPIC_PATH__ && !window.__SEO_TABLE_ID__) {
-        document.title = appName;
-      }
+      document.title = appName;
       document.getElementById('header-home-link').textContent = appName;
 
       // Footer source links (language-neutral)
@@ -225,6 +211,27 @@
         URLRouter.handleRoute();
       });
 
+      // Help links (footer, front-page banner, variable selector) → #hjelp view.
+      // One delegated listener covers links in re-rendered views too.
+      document.addEventListener('click', (e) => {
+        const helpLink = e.target.closest('a.app-help-link');
+        if (!helpLink) return;
+        e.preventDefault();
+        URLRouter.navigateTo('hjelp', {});
+        URLRouter.handleRoute();
+      });
+
+      // Table links in notes (convertMarkdownLinks in table-metadata.js) → open
+      // that table's variable view in the app. A modified click (Ctrl/Cmd, Shift,
+      // Alt) is left to the browser, so the link still opens in a new tab or window.
+      document.addEventListener('click', (e) => {
+        const tableLink = e.target.closest('a.app-table-link');
+        if (!tableLink || e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+        e.preventDefault();
+        URLRouter.navigateTo(tableLink.getAttribute('href').slice(1), {});
+        URLRouter.handleRoute();
+      });
+
       // Manual cache clear
       document.getElementById('clear-cache-link')?.addEventListener('click', async (e) => {
         e.preventDefault();
@@ -232,33 +239,6 @@
         logger.log('[App] Cache cleared by user');
         window.location.reload();
       });
-
-      // SEO: pre-rendrede sider ligger på /<slug>/.../ (emner) eller /table/{id}/
-      // (tabeller) og embedder ruten sin i window.__SEO_TOPIC_PATH__ /
-      // window.__SEO_TABLE_ID__ (se scripts/generate-seo-pages.mjs).
-      // Normaliser til kanonisk hash-URL uten omlasting. Kjører bare på sider
-      // som faktisk er pre-rendret — vanlig index.html (inkl. åpnet via file://,
-      // der replaceState til '/' kaster SecurityError) berøres ikke.
-      const seoPath = window.__SEO_TOPIC_PATH__;
-      const seoTable = window.__SEO_TABLE_ID__;
-      let seoTargetHash = null;
-      if (Array.isArray(seoPath) && seoPath.length) {
-        seoTargetHash = '#topic/' + seoPath.join('/');
-      } else if (seoTable) {
-        seoTargetHash = '#variables/' + seoTable;
-      }
-      if (seoTargetHash && window.location.pathname !== '/') {
-        const seoHash = (window.location.hash && window.location.hash !== '#')
-          ? window.location.hash
-          : seoTargetHash;
-        try {
-          history.replaceState(null, '', '/' + seoHash);
-        } catch (e) {
-          // Uventet miljø (f.eks. file:) — fortsett uten URL-normalisering
-          logger.warn('[App] Kunne ikke normalisere SEO-URL:', e);
-          window.location.hash = seoHash;
-        }
-      }
 
       // Route based on current URL hash
       if (window.location.hash && window.location.hash !== '#') {
@@ -274,6 +254,7 @@
     if (AppConfig.debug) {
       window.AppState = AppState;
       window.BrowserState = BrowserState;
+      window.VarSelect = VarSelect;
       window.api = api;
     }
     window.clearCache = () => {

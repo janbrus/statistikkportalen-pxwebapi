@@ -89,7 +89,7 @@ function renderDimensionList(dimCodes, zone) {
     const valueCount = Object.keys(dimension.category.index).length;
 
     html += `
-      <div class="dimension-chip" draggable="true"
+      <div class="dimension-chip" draggable="true" tabindex="0"
            data-dimension="${escapeHtml(dimCode)}"
            data-zone="${zone}"
            data-index="${index}">
@@ -131,6 +131,64 @@ function setupRotationEvents(overlay, dimensions) {
 
   // Drag and drop
   setupDragAndDrop(overlay);
+
+  // Keyboard: arrow keys move the focused chip. Delegated on the overlay so
+  // it survives the innerHTML re-rendering presets do — and deliberately NOT
+  // tied to dragDropAbortController (which is aborted on every preset).
+  // The listener dies naturally with overlay.remove().
+  overlay.addEventListener('keydown', (e) => {
+    const chip = e.target.closest('.dimension-chip');
+    if (!chip) return;
+
+    const zone = chip.closest('.dimension-dropzone');
+    if (!zone) return;
+
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+      // Move to the opposite zone (rows ↔ columns)
+      e.preventDefault();
+      const targetId = zone.id === 'rows-zone' ? 'columns-zone' : 'rows-zone';
+      const targetZone = overlay.querySelector('#' + targetId);
+      if (targetZone) moveChip(overlay, chip, targetZone, null);
+    } else if (e.key === 'ArrowUp') {
+      // Reorder: move one step up within the zone
+      e.preventDefault();
+      const prev = chip.previousElementSibling;
+      if (prev && prev.classList.contains('dimension-chip')) {
+        moveChip(overlay, chip, zone, prev);
+      }
+    } else if (e.key === 'ArrowDown') {
+      // Reorder: move one step down within the zone
+      e.preventDefault();
+      const next = chip.nextElementSibling;
+      if (next && next.classList.contains('dimension-chip')) {
+        moveChip(overlay, chip, zone, next.nextElementSibling);
+      }
+    }
+  });
+}
+
+/**
+ * Move a chip into a target zone, keeping empty-zone messages, the chip's
+ * zone marker and keyboard focus in sync. Used by the keyboard navigation.
+ * @param {HTMLElement} overlay - Dialog overlay element
+ * @param {HTMLElement} chip - The dimension chip to move
+ * @param {HTMLElement} targetZone - Dropzone to move the chip into
+ * @param {HTMLElement|null} beforeElement - Sibling to insert before (null = append)
+ */
+function moveChip(overlay, chip, targetZone, beforeElement) {
+  // Clear any "empty zone" message so the chip has room to enter
+  const emptyMsg = targetZone.querySelector('.empty-zone');
+  if (emptyMsg) emptyMsg.remove();
+
+  if (beforeElement) {
+    targetZone.insertBefore(chip, beforeElement);
+  } else {
+    targetZone.appendChild(chip);
+  }
+  chip.dataset.zone = targetZone.id === 'rows-zone' ? 'row' : 'col';
+
+  updateEmptyZones(overlay);
+  chip.focus();
 }
 
 // Track the current drag-drop abort controller to remove old listeners
@@ -280,26 +338,12 @@ function applyPreset(preset, dimensions, overlay) {
 
   switch (preset) {
     case 'default':
-      // Default layout from determineDefaultLayout
-      const timeDimIndex = dimensions.findIndex(d =>
-        d === 'Tid' || d.toLowerCase().includes('tid')
-      );
-      if (timeDimIndex !== -1) {
-        const nonTimeDims = dimensions.filter((_, i) => i !== timeDimIndex);
-        if (nonTimeDims.length > 0) {
-          newRows = [dimensions[timeDimIndex]];
-          newCols = nonTimeDims;
-        } else {
-          newRows = [dimensions[timeDimIndex]];
-          newCols = [];
-        }
-      } else if (dimensions.length > 1) {
-        newRows = dimensions.slice(0, -1);
-        newCols = [dimensions[dimensions.length - 1]];
-      } else {
-        newRows = [];
-        newCols = dimensions;
-      }
+      // Single source of truth — determineDefaultLayout knows the metric/time
+      // roles from JSON-Stat2 and the per-dim selected counts, which a string
+      // array of dimension codes alone cannot represent.
+      const defaultLayout = determineDefaultLayout(currentData);
+      newRows = defaultLayout.rows;
+      newCols = defaultLayout.columns;
       break;
 
     case 'transpose':
@@ -369,6 +413,10 @@ function applyRotation(overlay) {
   };
 
   logger.log('[TableRotation] New layout:', AppState.tableLayout);
+
+  // Keep the URL in step so a refresh or bookmark keeps the rotation. Replace
+  // rather than push, so Back leaves the table instead of undoing each rotation.
+  AppState._updateHash('table', false);
 
   // Close dialog
   overlay.remove();

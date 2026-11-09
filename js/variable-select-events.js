@@ -19,7 +19,6 @@ function setupVariableEvents() {
   setupListSelectionEvents();
   setupValueFilters();
   setupModeButtons();
-  setupKeyboardShortcuts();
   setupCodelistDropdowns();
 }
 
@@ -28,10 +27,21 @@ let _dragState = null;   // { dimCode, container, card, startIndex, mode, hasMov
 let _dragOccurred = false; // suppresses click handler after a completed drag
 let _activeCard = null;  // last .variable-card the user interacted with
 
-// "Committed" selections: items added by plain click or Ctrl/Cmd-click (not the current shift range).
-// Displayed selection = committedSelection ∪ current shift range.
-// This matches OS-standard list behavior (macOS Finder, Windows Explorer).
-const _committedSelection = {}; // dimCode → Set<number>
+// The shift-click model (anchor + committed picks) lives in VarSelect
+// (variable-select-state.js): lastClickedIndex and committedSelection.
+// Displayed selection = committed ∪ current shift range, which matches
+// OS-standard list behavior (macOS Finder, Windows Explorer).
+
+// Whether the most recent pointer interaction came from a finger/pen. Touch has no
+// Ctrl/Cmd/Shift, so a plain tap there is treated as a toggle (additive) in the click
+// handler below — otherwise every tap would replace the whole selection. Pointer events
+// carry pointerType and fire before mousedown/click, so this is accurate when click runs.
+// A mouse/trackpad gives 'mouse', so an iPad with a Magic Keyboard trackpad keeps the
+// desktop semantics (replace-on-click, Ctrl/Cmd to toggle, Shift for ranges).
+let _lastPointerWasTouch = false;
+document.addEventListener('pointerdown', (e) => {
+  _lastPointerWasTouch = (e.pointerType === 'touch' || e.pointerType === 'pen');
+}, { capture: true });
 
 // Track the last variable card the user interacted with (for Ctrl+A scope)
 document.addEventListener('mousedown', (e) => {
@@ -44,7 +54,7 @@ document.addEventListener('mouseup', () => {
   if (_dragState && _dragState.hasMoved) {
     const { container, dimCode } = _dragState;
     const allItems = Array.from(container.querySelectorAll('.value-list-item'));
-    _committedSelection[dimCode] = new Set(
+    VarSelect.committedSelection[dimCode] = new Set(
       allItems.filter(it => it.classList.contains('selected'))
               .map(it => parseInt(it.dataset.index, 10))
     );
@@ -52,13 +62,53 @@ document.addEventListener('mouseup', () => {
   _dragState = null;
 });
 
+// Ctrl+A selects all visible values in the active variable card.
+// Registered once at module level (like the listeners above) — the handler
+// guards on #variables-container so it is inert outside the variable view.
+// Triggers when focus is inside a value list, or when the user has clicked
+// anywhere in a card. The value-list-container has tabindex="0" so it can
+// also receive keyboard focus directly.
+document.addEventListener('keydown', (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
+    // Don't override when the user is typing in a text input
+    const activeEl = document.activeElement;
+    if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA')) return;
+
+    // Use focused value-list if available, otherwise fall back to last clicked card
+    const container =
+      activeEl?.closest('.value-list-container') ??
+      _activeCard?.querySelector('.value-list-container');
+    if (!container) return;
+    // Only act when within the variable-select view
+    if (!container.closest('#variables-container')) return;
+
+    e.preventDefault();
+
+    const card = container.closest('.variable-card');
+
+    // Switch to specific mode (individual selections)
+    container.dataset.mode = 'specific';
+
+    // Select all VISIBLE items (respects both codelist and text filter)
+    container.querySelectorAll('.value-list-item').forEach(item => {
+      if (item.style.display !== 'none') {
+        item.classList.add('selected');
+      }
+    });
+
+    updateModeVisuals(card);
+    updateValueCounter(card);
+    updateSelectionStatus();
+  }
+});
+
 /**
  * Set up click events on value list items (shift-click, ctrl-click, plain click, drag)
  */
 function setupListSelectionEvents() {
-  // Reset committed-selection state for the freshly rendered variable list
-  Object.keys(_committedSelection).forEach(k => delete _committedSelection[k]);
-
+  // The shift-click model for these freshly rendered lists starts empty: it is
+  // cleared by VarSelect.reset() on a table load (loadTableMetadata), or by
+  // resetSelections() before «Fyll inn standardvalg» rebuilds the cards.
   document.querySelectorAll('.value-list-container').forEach(container => {
     const card = container.closest('.variable-card');
     const dimCode = card.dataset.dimension;
@@ -135,7 +185,7 @@ function setupListSelectionEvents() {
       });
 
       // Update anchor so a subsequent shift-click extends from the drag endpoint
-      lastClickedIndex[dimCode] = currentIndex;
+      VarSelect.lastClickedIndex[dimCode] = currentIndex;
       updateValueCounter(card);
       updateSelectionStatus();
     });
@@ -148,6 +198,13 @@ function setupListSelectionEvents() {
       const item = e.target.closest('.value-list-item');
       if (!item) return;
 
+      // Touch/pen taps have no Ctrl/Cmd, so treat a tap as a toggle to allow multi-select.
+      // Capture mode *before* the star/top→specific switch below: the first tap that leaves
+      // star/top mode starts a clean single selection instead of toggling against the old
+      // visual state; subsequent taps (already 'specific') toggle individual values.
+      const isTouch = _lastPointerWasTouch;
+      const wasSpecific = container.dataset.mode === 'specific';
+
       // If in star/top mode, switch back to specific on click
       if (container.dataset.mode !== 'specific') {
         container.dataset.mode = 'specific';
@@ -157,13 +214,13 @@ function setupListSelectionEvents() {
       const clickedIndex = parseInt(item.dataset.index, 10);
       const allItems = Array.from(container.querySelectorAll('.value-list-item'));
 
-      if (!_committedSelection[dimCode]) _committedSelection[dimCode] = new Set();
-      const committed = _committedSelection[dimCode];
+      if (!VarSelect.committedSelection[dimCode]) VarSelect.committedSelection[dimCode] = new Set();
+      const committed = VarSelect.committedSelection[dimCode];
 
-      if (e.shiftKey && lastClickedIndex[dimCode] !== undefined && (e.ctrlKey || e.metaKey)) {
+      if (e.shiftKey && VarSelect.lastClickedIndex[dimCode] !== undefined && (e.ctrlKey || e.metaKey)) {
         // Shift+Ctrl: add range to committed selection (fully additive, anchor advances)
-        const start = Math.min(lastClickedIndex[dimCode], clickedIndex);
-        const end   = Math.max(lastClickedIndex[dimCode], clickedIndex);
+        const start = Math.min(VarSelect.lastClickedIndex[dimCode], clickedIndex);
+        const end   = Math.max(VarSelect.lastClickedIndex[dimCode], clickedIndex);
         allItems.forEach(it => {
           const idx = parseInt(it.dataset.index, 10);
           if (idx >= start && idx <= end) {
@@ -171,11 +228,11 @@ function setupListSelectionEvents() {
             committed.add(idx);
           }
         });
-        lastClickedIndex[dimCode] = clickedIndex;
-      } else if (e.shiftKey && lastClickedIndex[dimCode] !== undefined) {
+        VarSelect.lastClickedIndex[dimCode] = clickedIndex;
+      } else if (e.shiftKey && VarSelect.lastClickedIndex[dimCode] !== undefined) {
         // Shift-click (no Ctrl): replace shift range but preserve committed items
-        const start = Math.min(lastClickedIndex[dimCode], clickedIndex);
-        const end   = Math.max(lastClickedIndex[dimCode], clickedIndex);
+        const start = Math.min(VarSelect.lastClickedIndex[dimCode], clickedIndex);
+        const end   = Math.max(VarSelect.lastClickedIndex[dimCode], clickedIndex);
         allItems.forEach(it => {
           const idx = parseInt(it.dataset.index, 10);
           if ((idx >= start && idx <= end) || committed.has(idx))
@@ -184,16 +241,17 @@ function setupListSelectionEvents() {
             it.classList.remove('selected');
         });
         // anchor and committed stay unchanged
-      } else if (e.ctrlKey || e.metaKey) {
-        // Ctrl/Cmd-click: commit current display (incl. any active shift range), then toggle
+      } else if (e.ctrlKey || e.metaKey || (isTouch && wasSpecific)) {
+        // Ctrl/Cmd-click (or a touch tap in specific mode): commit current display
+        // (incl. any active shift range), then toggle the tapped item in/out
         const current = new Set(
           allItems.filter(it => it.classList.contains('selected'))
                   .map(it => parseInt(it.dataset.index, 10))
         );
         if (current.has(clickedIndex)) current.delete(clickedIndex);
         else current.add(clickedIndex);
-        _committedSelection[dimCode] = current;
-        lastClickedIndex[dimCode] = clickedIndex;
+        VarSelect.committedSelection[dimCode] = current;
+        VarSelect.lastClickedIndex[dimCode] = clickedIndex;
         allItems.forEach(it => {
           const idx = parseInt(it.dataset.index, 10);
           if (current.has(idx)) it.classList.add('selected');
@@ -201,8 +259,8 @@ function setupListSelectionEvents() {
         });
       } else {
         // Plain click: reset everything, select only this item
-        _committedSelection[dimCode] = new Set([clickedIndex]);
-        lastClickedIndex[dimCode] = clickedIndex;
+        VarSelect.committedSelection[dimCode] = new Set([clickedIndex]);
+        VarSelect.lastClickedIndex[dimCode] = clickedIndex;
         allItems.forEach(it => it.classList.remove('selected'));
         item.classList.add('selected');
       }
@@ -242,44 +300,20 @@ function setupValueFilters() {
 }
 
 /**
- * Set up Ctrl+A keyboard shortcut to select all visible values in the active variable card.
- * Triggers when focus is inside a value list, or when the user has clicked anywhere in a card.
- * The value-list-container has tabindex="0" so it can also receive keyboard focus directly.
+ * Switch a card's value list to a mode and refresh the card and the status.
+ * A mode button leaves no specific picks to extend, so the list's shift-click
+ * model is cleared; otherwise a later shift-click would bring back picks from
+ * before.
+ *
+ * @param {HTMLElement} card - The .variable-card
+ * @param {string} mode - 'top' | 'star' | 'specific'
  */
-function setupKeyboardShortcuts() {
-  document.addEventListener('keydown', (e) => {
-    if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
-      // Don't override when the user is typing in a text input
-      const activeEl = document.activeElement;
-      if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA')) return;
-
-      // Use focused value-list if available, otherwise fall back to last clicked card
-      const container =
-        activeEl?.closest('.value-list-container') ??
-        _activeCard?.querySelector('.value-list-container');
-      if (!container) return;
-      // Only act when within the variable-select view
-      if (!container.closest('#variables-container')) return;
-
-      e.preventDefault();
-
-      const card = container.closest('.variable-card');
-
-      // Switch to specific mode (individual selections)
-      container.dataset.mode = 'specific';
-
-      // Select all VISIBLE items (respects both codelist and text filter)
-      container.querySelectorAll('.value-list-item').forEach(item => {
-        if (item.style.display !== 'none') {
-          item.classList.add('selected');
-        }
-      });
-
-      updateModeVisuals(card);
-      updateValueCounter(card);
-      updateSelectionStatus();
-    }
-  });
+function _setCardMode(card, mode) {
+  card.querySelector('.value-list-container').dataset.mode = mode;
+  VarSelect.setListState(card.dataset.dimension, []);
+  updateModeVisuals(card);
+  updateValueCounter(card);
+  updateSelectionStatus();
 }
 
 /**
@@ -290,24 +324,14 @@ function setupModeButtons() {
   document.querySelectorAll('.select-top-btn').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.preventDefault();
-      const card = btn.closest('.variable-card');
-      const container = card.querySelector('.value-list-container');
-      container.dataset.mode = 'top';
-      updateModeVisuals(card);
-      updateValueCounter(card);
-      updateSelectionStatus();
+      _setCardMode(btn.closest('.variable-card'), 'top');
     });
   });
 
   // Top-n input: auto-activate top mode when user types a number
   document.querySelectorAll('.top-n-input').forEach(input => {
     input.addEventListener('input', () => {
-      const card = input.closest('.variable-card');
-      const container = card.querySelector('.value-list-container');
-      container.dataset.mode = 'top';
-      updateModeVisuals(card);
-      updateValueCounter(card);
-      updateSelectionStatus();
+      _setCardMode(input.closest('.variable-card'), 'top');
     });
   });
 
@@ -315,12 +339,7 @@ function setupModeButtons() {
   document.querySelectorAll('.select-all-btn').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.preventDefault();
-      const card = btn.closest('.variable-card');
-      const container = card.querySelector('.value-list-container');
-      container.dataset.mode = 'star';
-      updateModeVisuals(card);
-      updateValueCounter(card);
-      updateSelectionStatus();
+      _setCardMode(btn.closest('.variable-card'), 'star');
     });
   });
 
@@ -329,14 +348,10 @@ function setupModeButtons() {
     btn.addEventListener('click', (e) => {
       e.preventDefault();
       const card = btn.closest('.variable-card');
-      const container = card.querySelector('.value-list-container');
-      container.dataset.mode = 'specific';
-      container.querySelectorAll('.value-list-item').forEach(item => {
+      card.querySelectorAll('.value-list-container .value-list-item').forEach(item => {
         item.classList.remove('selected');
       });
-      updateModeVisuals(card);
-      updateValueCounter(card);
-      updateSelectionStatus();
+      _setCardMode(card, 'specific');
     });
   });
 }

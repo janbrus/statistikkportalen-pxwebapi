@@ -1,20 +1,16 @@
 /**
- * Configuration file for using the application with SCBs PxWebApi
- * Replace config.js with this file to connect to SCBs API
- * To update the front page menu, also replace subjects.js with the subjects-sv.js file
+ * Configuration file for using the application with SCB's PxWebApi
+ * (Statistikportalen, Statistiska centralbyrån).
  *
- * This file contains all configurable settings for the application.
- * Modify these values to change the API endpoint or other settings.
- *
- * NB: scripts/generate-seo-pages.mjs leser også denne filen (via node:vm)
- * for API-endepunkt, appnavn og kildeinfo — hold strukturen kompatibel.
+ * Not loaded by index.html. To deploy the SCB instance, replace config.js with
+ * this file and subjects.js with subjects-sv.js (same file names, so the ?v=
+ * query strings in index.html still apply). Everything else is shared with the
+ * SSB instance. Keep the fields in step with config.js.
  */
 
 const AppConfig = {
   /**
    * PxWebApi v2 base URL for the data source.
-   * Default: https://data.ssb.no/api/pxwebapi/v2
-   * For alternative environments, change this to the appropriate endpoint.
    */
   apiBaseUrl: 'https://statistikdatabasen.scb.se/api/v2',
 
@@ -27,7 +23,19 @@ const AppConfig = {
     nameFull: 'Statistiska centralbyrån',
     url: 'https://www.scb.se/',
     licenseUrl: 'https://www.scb.se/vara-tjanster/oppna-data/',
-    licenseName: 'CC0'
+    licenseName: 'CC0',
+
+    // SSB's kortnavn URL convention for "Om statistikken" doesn't apply to SCB,
+    // so there is no fallback link when the metadata has no link.related.
+    statisticsPageBase: null,
+
+    // No page of changed and removed tables is configured for SCB: the message
+    // for a table that doesn't exist then has no link.
+    tableChangesUrl: null,
+
+    // No SCB page for a saved query is configured: «Få lenke» shows only the
+    // app's own #sq/ link.
+    savedQueryUrl: null
   },
 
   /**
@@ -42,13 +50,8 @@ const AppConfig = {
   },
 
   /**
-   * Instance-specific web analytics (Umami).
-   * Injected into <head> at startup by the bootstrap snippet in index.html.
-   * Set to null (or leave scriptUrl/websiteId empty) to disable analytics
-   * entirely — useful for local development or instances without tracking.
-   *
-   * For a separate instance (e.g. the Swedish SCB portal), point scriptUrl
-   * and websiteId at that instance's own Umami site.
+   * Instance-specific web analytics (Umami): the SCB instance's own site, as in
+   * 1.4.5. Umami counts only on the hosts in `domains`. Set to null to turn it off.
    */
   analytics: {
     scriptUrl: 'https://stats.statistikkportalen.no/script.js',
@@ -66,7 +69,7 @@ const AppConfig = {
    * The first entry is the default language.
    */
   languages: [
-     { code: 'sv', apiLang: 'sv', label: 'Svenska' },
+    { code: 'sv', apiLang: 'sv', label: 'Svenska' },
     { code: 'en', apiLang: 'en', label: 'English' }
   ],
 
@@ -93,11 +96,12 @@ const AppConfig = {
    * API request limits
    */
   limits: {
-    // Maximum cells per request. Overridden at runtime by config.maxDataCells from the /config endpoint.
-    maxCells: 800000,
+    // Maximum cells per request. Overridden at runtime by config.maxDataCells
+    // from the /config endpoint (150 000 at SCB, 2026-11-09).
+    maxCells: 150000,
 
-    // Warning threshold (cells). Overridden at runtime to 75% of config.maxDataCells from the /config endpoint.
-    cellWarningThreshold: 600000,
+    // Warning threshold (cells). Overridden at runtime to 75% of config.maxDataCells.
+    cellWarningThreshold: 112500,
 
     // Supported export formats. Null until populated at runtime from config.dataFormats via the /config endpoint.
     dataFormats: null,
@@ -107,8 +111,16 @@ const AppConfig = {
     // rows than requested. Not an API-imposed limit.
     tablePageBatchSize: 10000,
 
-    // Maximum GET URL length before warning (SSB recommends < 2000 chars)
-    maxGetUrlLength: 2000
+    // Maximum GET URL length before warning
+    maxGetUrlLength: 2000,
+
+    // The source's rate limit. SCB's /config states 30 calls per 10 s
+    // (2026-11-09) and overrides this at runtime.
+    rateLimit: { calls: 30, windowMs: 10000 },
+
+    // Share of rateLimit the app uses, to be considerate towards the API:
+    // half, so 15 calls per 10 s at SCB. Cache hits don't count.
+    rateLimitShare: 0.5
   },
 
   /**
@@ -150,25 +162,19 @@ const AppConfig = {
     // Show discontinued tables by default in search and topic views
     showDiscontinuedByDefault: false,
 
-    // Skjul tidsperioden som ofte står på slutten av SSB-tabelltitler i
-    // listevisningen (søk, emner, forsiden), f.eks. "Konsumprisindeks 2010-2025"
-    // → "Konsumprisindeks". Perioden vises uansett i egen "Tidsperiode"-kolonne.
-    // Suffikset fjernes kun når det faktisk matcher start-/sluttperioden som
-    // vises i kolonnen (også flerårige intervaller som "(1990-2000)-(2024-2025)").
-    hidePeriodInTableTitles: true,
+    // Off for SCB: its titles end with a frequency word before the period
+    // ("… efter kön och ålder. År 2005-2025", "Månad 2001M01-2026M09"), so
+    // dropping the period would leave "… och ålder. År".
+    hidePeriodInTableTitles: false,
 
-    // Antall stinivåer under et emne som vises som navigasjonskort før
-    // tabellisten vises i emnevisningen. SSB: 2 (undertema + kategori).
-    // Andre PxWebApi-instanser med grunnere hierarki kan bruke lavere verdi;
-    // 0 viser tabellisten allerede på emnenivå.
-    // SCB har et grunnere hierarki enn SSB - bruker 1 i stedet for 2 her
+    // SCB's hierarchy is shallower than SSB's (subject → subtopic → tables),
+    // so one level of navigation cards instead of two. As in 1.4.5.
     topicCardDepth: 1
   },
 
   /**
-   * Source update schedule (Norwegian time / Europe/Oslo for SSB).
-   * Metadata updates at 05:00 and 11:30 daily.
-   * Data (statistics) updates at 08:00 daily.
+   * Source update schedule. The same as the SSB instance, as in 1.4.5;
+   * SCB's own publishing times have not been checked.
    * Cache created before the most recent update is considered stale.
    */
   sourceUpdateTimes: [

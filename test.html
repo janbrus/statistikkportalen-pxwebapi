@@ -30,8 +30,21 @@
   <script src="js/router.js"></script>
   <script src="js/subjects.js"></script>
   <script src="js/menu-hierarchy.js"></script>
+  <script src="js/browser-state.js"></script>
   <script src="js/synonyms.js"></script>
   <script src="js/search-enhanced.js"></script>
+  <!-- Loaded out of index.html order: only needed here for the VarSelect,
+       isTimeDimension, getTimeShortcut, definition-link, table-metadata,
+       status-flag, mandatory-note and note-link tests. Safe to load
+       standalone — they only declare state and functions; their DOM/runtime
+       refs live inside function bodies. -->
+  <script src="js/variable-select-state.js"></script>
+  <script src="js/variable-select-render.js"></script>
+  <script src="js/variable-select-api.js"></script>
+  <script src="js/table-display.js"></script>
+  <script src="js/table-metadata.js"></script>
+  <!-- chart-view.js only needs Chart.js inside renderChart(); buildChartData() is pure -->
+  <script src="js/chart-view.js"></script>
 
   <script>
     // Minimal test runner
@@ -90,6 +103,36 @@
     assertEqual('source.nameFull', AppConfig.source.nameFull, 'Statistisk sentralbyrå');
     assertEqual('source.licenseName', AppConfig.source.licenseName, 'CC BY 4.0');
     assertEqual('app.name', AppConfig.app.name, 'Statistikkportalen');
+    assertEqual('analytics.scriptUrl', AppConfig.analytics.scriptUrl, 'https://stats.statistikkportalen.no/script.js');
+    assert('analytics.websiteId is set', typeof AppConfig.analytics.websiteId === 'string' && AppConfig.analytics.websiteId.length > 0);
+    assertEqual('analytics.domains', AppConfig.analytics.domains, 'statistikkportalen.no');
+    assertEqual('analytics.doNotTrack', AppConfig.analytics.doNotTrack, true);
+    assertEqual('source.statisticsPageBase (nb, via localized)', localized(AppConfig.source.statisticsPageBase), 'https://www.ssb.no/');
+    assertEqual('source.statisticsPageBase.en', AppConfig.source.statisticsPageBase.en, 'https://www.ssb.no/en/');
+    assertEqual('source.savedQueryUrl', AppConfig.source.savedQueryUrl, 'https://www.ssb.no/statbank/sq/{id}');
+    assertEqual('ui.topicCardDepth (two card levels for SSB)', AppConfig.ui.topicCardDepth, 2);
+
+    suite('Rate budget — half of the source\'s limit');
+    assertEqual('SSB limit: 40 per 60 s', JSON.stringify(AppConfig.limits.rateLimit), JSON.stringify({ calls: 40, windowMs: 60000 }));
+    assertEqual('share 0.5', AppConfig.limits.rateLimitShare, 0.5);
+    assertEqual('budget: 20 per 60 s', JSON.stringify(api._rateBudget()), JSON.stringify({ calls: 20, windowMs: 60000 }));
+    const _savedLimit = AppConfig.limits.rateLimit;
+    api._applyConfig({ maxCallsPerTimeWindow: 0, timeWindow: 0 });
+    assert('/config with 0 (SSB) keeps the configured limit', AppConfig.limits.rateLimit === _savedLimit);
+    api._applyConfig({ maxCallsPerTimeWindow: 30, timeWindow: 10 });
+    assertEqual('/config with a limit (SCB: 30 per 10 s) wins',
+      JSON.stringify(AppConfig.limits.rateLimit), JSON.stringify({ calls: 30, windowMs: 10000 }));
+    assertEqual('… and the budget is 15 per 10 s', JSON.stringify(api._rateBudget()), JSON.stringify({ calls: 15, windowMs: 10000 }));
+    AppConfig.limits.rateLimit = _savedLimit;
+
+    suite('Translations — every nb key also in en and sv');
+    // sv isn't enabled for SSB, but the SCB instance (config-sv.js) runs in sv
+    const _nbKeys = Object.keys(translations.nb);
+    for (const _lang of ['en', 'sv']) {
+      const _missing = _nbKeys.filter(k => !(k in translations[_lang]));
+      assert(_lang + ' has every nb key' + (_missing.length ? ' — missing: ' + _missing.slice(0, 6).join(', ') : ''),
+        _missing.length === 0);
+    }
     assertEqual('defaultLanguage', AppConfig.defaultLanguage, 'nb');
     assertEqual('first language code', AppConfig.languages[0].code, 'nb');
     assertEqual('first language apiLang', AppConfig.languages[0].apiLang, 'no');
@@ -114,6 +157,17 @@
     assert('nb saveQuery.copy exists', t('saveQuery.copy') !== 'saveQuery.copy');
     assert('nb saveQuery.saved exists', t('saveQuery.saved') !== 'saveQuery.saved');
 
+    suite('Translations — keys added for 1.5.0 exist in nb, en and sv');
+    // Checked in the dictionaries directly: sv is not enabled in this instance,
+    // so setLanguage('sv') is a no-op. Add new keys to this list.
+    const _newKeys = ['variable.defaultSelectionEmpty', 'variable.definitionLink',
+      'table.preliminary', 'table.nil', 'table.notYetAvailable',
+      'metadata.title', 'metadata.source', 'metadata.updated', 'metadata.status', 'metadata.official',
+      'metadata.about', 'metadata.notes', 'metadata.contact', 'metadata.phone', 'metadata.definitions',
+      'error.tableNotFound', 'error.tableNotFoundTitle', 'error.tableChangesLink'];
+    _newKeys.forEach(key => ['nb', 'en', 'sv'].forEach(lang =>
+      assert(lang + ' ' + key, typeof translations[lang][key] === 'string' && translations[lang][key] !== '')));
+
     suite('Translations — SSB subject groups (nb)');
     assert('subject.group.arbeid exists', t('subject.group.arbeid') !== 'subject.group.arbeid');
     assert('subject.group.okonomi exists', t('subject.group.okonomi') !== 'subject.group.okonomi');
@@ -125,11 +179,21 @@
     assert('subject.name.nk exists', t('subject.name.nk') !== 'subject.name.nk');
     assert('subject.name.ud exists', t('subject.name.ud') !== 'subject.name.ud');
 
+    suite('localized — instance settings given per language');
+    assertEqual('object → the active language (nb)', localized({ nb: 'a', en: 'b' }), 'a');
+    assertEqual('a plain value is returned as is', localized('x'), 'x');
+    assertEqual('null → ""', localized(null), '');
+    assertEqual('undefined → ""', localized(undefined), '');
+    assertEqual('tagline follows the language', localized(AppConfig.app.tagline), AppConfig.app.tagline.nb);
+
     suite('Translations — English');
     setLanguage('en');
     assert('en saveQuery.title exists', t('saveQuery.title') !== 'saveQuery.title');
     assert('en subject.group.arbeid exists', t('subject.group.arbeid') !== 'subject.group.arbeid');
     assert('en subject.name.al exists', t('subject.name.al') !== 'subject.name.al');
+    assertEqual('localized: object → en', localized({ nb: 'a', en: 'b' }), 'b');
+    assertEqual('localized: no en → falls back to nb', localized({ nb: 'a' }), 'a');
+    assert('tableChangesUrl in English is the /en/ page', localized(AppConfig.source.tableChangesUrl).startsWith('https://www.ssb.no/en/statbank/'));
     setLanguage('nb'); // restore
 
     suite('Translations — getCurrentApiLang');
@@ -141,14 +205,33 @@
     assert('arbeid group has al', SubjectConfig.subjectGroups.arbeid.subjects.includes('al'));
     assert('arbeid group has ud', SubjectConfig.subjectGroups.arbeid.subjects.includes('ud'));
     assert('okonomi group has nk', SubjectConfig.subjectGroups.okonomi.subjects.includes('nk'));
-    assert('subjectNames has al', SubjectConfig.subjectNames['al'] === 'Arbeid og lønn');
-    assert('subjectNames has be', SubjectConfig.subjectNames['be'] === 'Befolkning');
+    assert('subjectNames has al', SubjectConfig.subjectNames['al'].nb === 'Arbeid og lønn');
+    assert('subjectNames has be', SubjectConfig.subjectNames['be'].nb === 'Befolkning');
 
-    // Verify all subjects in groups exist in subjectNames
+    // Verify all subjects in groups have names, and every name and group label exists in nb, en and sv
+    const _langs = ['nb', 'en', 'sv'];
     const allGroupSubjects = Object.values(SubjectConfig.subjectGroups).flatMap(g => g.subjects);
-    const missingNames = allGroupSubjects.filter(s => !SubjectConfig.subjectNames[s]);
-    assert('all grouped subjects have names (' + allGroupSubjects.length + ' subjects)',
+    const missingNames = allGroupSubjects.filter(s => !_langs.every(l => SubjectConfig.subjectNames[s]?.[l]));
+    assert('all grouped subjects have names in nb, en and sv (' + allGroupSubjects.length + ' subjects)',
       missingNames.length === 0);
+    const missingGroupLabels = Object.values(SubjectConfig.subjectGroups).filter(g => !_langs.every(l => g.label?.[l]));
+    assert('all subject groups have labels in nb, en and sv', missingGroupLabels.length === 0);
+
+    suite('SubjectConfig — names registered in the translation dictionary');
+    // Checked in the dictionaries directly (sv is not enabled in this instance)
+    const _unregistered = [];
+    _langs.forEach(l => {
+      Object.entries(SubjectConfig.subjectGroups).forEach(([id, g]) => {
+        if (translations[l]['subject.group.' + id] !== g.label[l]) _unregistered.push(l + ' group ' + id);
+      });
+      Object.entries(SubjectConfig.subjectNames).forEach(([code, n]) => {
+        if (translations[l]['subject.name.' + code] !== n[l]) _unregistered.push(l + ' name ' + code);
+      });
+    });
+    assert('every group and subject name is registered in nb, en and sv' +
+      (_unregistered.length ? ' — missing: ' + _unregistered.slice(0, 5).join(', ') : ''), _unregistered.length === 0);
+    assertEqual('t() resolves a subject name (nb)', t('subject.name.al'), 'Arbeid og lønn');
+    assertEqual('sv subject name', translations.sv['subject.name.ut'], 'Utrikeshandel');
 
     suite('SearchSynonyms — Norwegian');
     assert('SearchSynonyms is array', Array.isArray(SearchSynonyms));
@@ -167,11 +250,107 @@
 
     suite('CacheManager — schedule staleness enabled');
     // With 3 sourceUpdateTimes, _getLastSourceUpdateTimestamp should return a real timestamp
-    assert('last source update is a positive timestamp', cm._getLastSourceUpdateTimestamp() > 0);
+    assert('last source update is a positive timestamp', cm._getLastSSBUpdateTimestamp() > 0);
 
     suite('PxWebApi — class and base URL');
-    assert('api is instance of PxWebApi', api.constructor.name === 'PxWebApi');
+    assert('api is instance of SSBApi', api.constructor.name === 'SSBApi');
     assertEqual('api.baseUrl', api.baseUrl, 'https://data.ssb.no/api/pxwebapi/v2');
+
+    suite('api._buildApiError — today\'s rules, plus a table that doesn\'t exist');
+    // Body as SSB returns it for 11038 (removed) and 99999 (never existed), 2026-11-08
+    const _gone = { type: 'Parameter error', title: 'Non-existent table', status: 404 };
+    const _e404 = api._buildApiError(404, 'Not Found', _gone);
+    assert('404 Non-existent table → tableNotFound', _e404.tableNotFound === true);
+    assertEqual('…with a translated message for the user', _e404.userMessage, t('error.tableNotFound'));
+    assertEqual('…and the table-changes page (nb)', _e404.helpUrl, AppConfig.source.tableChangesUrl.nb);
+    assertEqual('…the technical message is still the API title', _e404.message, 'Non-existent table');
+    assert('400 from /data with the same title → tableNotFound', api._buildApiError(400, 'Bad Request', _gone).tableNotFound === true);
+    const _savedChanges = AppConfig.source.tableChangesUrl;
+    AppConfig.source.tableChangesUrl = null;
+    assertEqual('no tableChangesUrl (other instances) → no helpUrl', api._buildApiError(404, 'Not Found', _gone).helpUrl, null);
+    AppConfig.source.tableChangesUrl = _savedChanges;
+    const _e400 = api._buildApiError(400, 'Bad Request', { title: 'Bad Request', detail: 'Value XXXX not found' });
+    assertEqual('other errors: detail first', _e400.message, 'Value XXXX not found');
+    assert('other errors: no userMessage, no helpUrl', !_e400.userMessage && !_e400.helpUrl && !_e400.tableNotFound);
+    assertEqual('429 → rate-limit message', api._buildApiError(429, 'Too Many Requests', null).message, t('error.rateLimit'));
+    assertEqual('403 without a body → cell-limit message', api._buildApiError(403, 'Forbidden', null).message, t('error.cellLimit'));
+    assertEqual('500 without a body → HTTP status', api._buildApiError(500, 'Internal Server Error', null).message, 'HTTP 500: Internal Server Error');
+
+    suite('showViewError — the message stays in the view');
+    const _savedTitle = document.title;
+    const _view = document.createElement('div');
+    _view.className = 'view-container';
+    _view.innerHTML = '<div class="view-header"><span class="breadcrumb-current">11038 Laster...</span><h2>Laster...</h2></div>' +
+      '<div id="_vc"><p class="loading-message">Laster metadata...</p></div>';
+    document.body.appendChild(_view);
+    AppState.selectedTable = { id: '11038', label: '11038: Laster...' };
+    showViewError(_view.querySelector('#_vc'), _e404.userMessage, _e404);
+    const _vp = _view.querySelector('#_vc p.error-message');
+    assert('loading text replaced by the message', !!_vp && _vp.textContent.startsWith(t('error.tableNotFound')) && !_view.textContent.includes('Laster metadata'));
+    assertEqual('with the link to the table-changes page', _vp?.querySelector('a')?.getAttribute('href'), AppConfig.source.tableChangesUrl.nb);
+    assertEqual('link text', _vp?.querySelector('a')?.textContent, t('error.tableChangesLink'));
+    assertEqual('heading says the table doesn\'t exist', _view.querySelector('h2').textContent, t('error.tableNotFoundTitle'));
+    assertEqual('breadcrumb keeps only the table number', _view.querySelector('.breadcrumb-current').textContent, '11038');
+    assert('the view is marked table-not-found (CSS hides its controls)', _view.classList.contains('table-not-found'));
+    _view.classList.remove('table-not-found');
+    _view.querySelector('#_vc').innerHTML = '<p>Laster...</p>';
+    _view.querySelector('h2').textContent = 'Tittel';
+    showViewError(_view.querySelector('#_vc'), 'Kunne ikke hente data', _e400);
+    assert('other errors: message without a link, heading kept',
+      _view.querySelector('#_vc').textContent === 'Kunne ikke hente data' && _view.querySelector('h2').textContent === 'Tittel');
+    assert('other errors: the view keeps its controls', !_view.classList.contains('table-not-found'));
+    const _detached = document.createElement('div');
+    _detached.innerHTML = '<p>Laster...</p>';
+    showViewError(_detached, 'x', _e404);
+    assertEqual('a container that has left the page is left alone', _detached.textContent, 'Laster...');
+    _view.remove();
+    AppState.selectedTable = null;
+    document.title = _savedTitle;
+
+    suite('renderGuard — a newer render makes the older one stale');
+    const _guard = renderGuard();
+    assert('current right after it is taken', _guard() === true);
+    renderCurrentView();   // no #content in test.html, but it still counts as a new render
+    assert('stale after renderCurrentView()', _guard() === false);
+    assert('a guard taken now is current', renderGuard()() === true);
+
+    suite('renderGuard().signal — aborted when the next render starts');
+    const _sigGuard = renderGuard();
+    assert('not aborted while its render is current', _sigGuard.signal.aborted === false);
+    renderCurrentView();
+    assert('aborted after renderCurrentView()', _sigGuard.signal.aborted === true);
+    assert('a guard taken now has a live signal', renderGuard().signal.aborted === false);
+
+    suite('BrowserState.cleanTableLabel — the period goes from list titles (as in 1.4.5)');
+    // Titles and periods as in SSB's /tables list, 2026-11-08
+    const _clean = (label, fp, lp) => BrowserState.cleanTableLabel(label, fp, lp);
+    assert('hidePeriodInTableTitles is on', AppConfig.ui.hidePeriodInTableTitles === true);
+    assertEqual('year range', _clean('05327: Personer, etter arbeidsstyrkestatus, kjønn og alder 1972-2025', '1972', '2025'),
+      'Personer, etter arbeidsstyrkestatus, kjønn og alder');
+    assertEqual('month range after a full stop', _clean('13760: Arbeidsstyrken, etter kjønn og alder. Sesongjusterte tall 2006M01-2026M09', '2006M01', '2026M09'),
+      'Arbeidsstyrken, etter kjønn og alder. Sesongjusterte tall');
+    assertEqual('range of ranges in parentheses', _clean('Innovasjonsaktivitet, etter detaljert næring (SN2007) (2016-2018)-(2022-2024)', '2016-2018', '2022-2024'),
+      'Innovasjonsaktivitet, etter detaljert næring (SN2007)');
+    assertEqual('one period (first = last)', _clean('Valgresultat 2025', '2025', '2025'), 'Valgresultat');
+    assertEqual('a period that doesn\'t match is kept', _clean('Befolkning 1986-2025', '1986', '2026'), 'Befolkning 1986-2025');
+    assertEqual('a title without a period is kept', _clean('Pengemengden M1, M2 og M3', '2008M01', '2026M09'), 'Pengemengden M1, M2 og M3');
+    assertEqual('no periods given → only the ID prefix goes', _clean('07459: Befolkning 1986-2026'), 'Befolkning 1986-2026');
+    AppConfig.ui.hidePeriodInTableTitles = false;
+    assertEqual('setting off → the period stays', _clean('05327: Personer 1972-2025', '1972', '2025'), 'Personer 1972-2025');
+    AppConfig.ui.hidePeriodInTableTitles = true;
+
+    suite('Search filters — enhanced search on by default, enh=0 turns it off (as in 1.4.5)');
+    const _savedFilters = { ...BrowserState.searchFilters };
+    assert('on by default', BrowserState.searchFilters.enhanced === true);
+    BrowserState.searchFiltersFromParams({ q: 'bnp' });
+    assert('a URL without enh → on', BrowserState.searchFilters.enhanced === true);
+    assert('…and on is not written to the URL', !('enh' in BrowserState.searchFiltersToParams()));
+    BrowserState.searchFiltersFromParams({ q: 'bnp', enh: '0' });
+    assert('enh=0 (1.4.5 links) → off', BrowserState.searchFilters.enhanced === false);
+    assertEqual('…and off is written as enh=0', BrowserState.searchFiltersToParams().enh, '0');
+    BrowserState.searchFiltersFromParams({ q: 'bnp', enh: '1' });
+    assert('enh=1 → on', BrowserState.searchFilters.enhanced === true);
+    Object.assign(BrowserState.searchFilters, _savedFilters);
 
     suite('URLRouter — ssb_navRef key');
     sessionStorage.removeItem('ssb_navRef');
@@ -191,8 +370,439 @@
     assertEqual('/statbank/sq/ matched',
       detectSavedQueryId('https://www.ssb.no/statbank/table/14704?sq=30121434'), '30121434');
 
+    suite('formatNumber — Norwegian formatting');
+    assertEqual('null → dash', formatNumber(null), '-');
+    assertEqual('undefined → dash', formatNumber(undefined), '-');
+    assertEqual('empty string → dash', formatNumber(''), '-');
+    assertEqual('Infinity → dash', formatNumber(Infinity), '-');
+    assertEqual('non-numeric passes through', formatNumber('i alt'), 'i alt');
+    assertEqual('zero (auto-decimals)', formatNumber(0), '0');
+    assertEqual('thousands separator is space', formatNumber(1000000, 0), '1 000 000');
+    assertEqual('comma decimal + space thousands', formatNumber(1234.5, 1), '1 234,5');
+    assertEqual('auto-detects decimal precision', formatNumber(1234.5), '1 234,5');
+    assertEqual('negative number', formatNumber(-1234, 0), '-1 234');
+
+    suite('escapeHtml — XSS-safe');
+    assertEqual('escapes angle brackets', escapeHtml('<b>'), '&lt;b&gt;');
+    assertEqual('ampersand escaped first (no double-escape)', escapeHtml('a & b'), 'a &amp; b');
+    assertEqual('double quote', escapeHtml('"x"'), '&quot;x&quot;');
+    assertEqual('single quote', escapeHtml("'x'"), '&#39;x&#39;');
+    assertEqual('null → empty string', escapeHtml(null), '');
+    assertEqual('undefined → empty string', escapeHtml(undefined), '');
+    assertEqual('number coerced to string', escapeHtml(123), '123');
+
+    suite('extractTableTitle');
+    assertEqual('strips "id: " prefix', extractTableTitle('13760: Befolkning'), 'Befolkning');
+    assertEqual('leaves unprefixed label intact', extractTableTitle('Befolkning'), 'Befolkning');
+    assertEqual('empty falls back to unnamed', extractTableTitle(''), t('table.unnamed'));
+
+    suite('URLRouter — URL-safe base64 round-trip');
+    assertEqual('encode(null) → null', URLRouter.encode(null), null);
+    assertEqual('encode({}) → null', URLRouter.encode({}), null);
+    assertEqual('decode(null) → null', URLRouter.decode(null), null);
+    assertEqual('decode("") → null', URLRouter.decode(''), null);
+    const _rtObj = { Kjonn: ['1', '2'], Tid: 'top(5)' };
+    const _rtEnc = URLRouter.encode(_rtObj);
+    assert('encode returns a string', typeof _rtEnc === 'string');
+    assert('encoded output has no +, / or = chars', !/[+/=]/.test(_rtEnc));
+    assertEqual('decode(encode(obj)) round-trips',
+      JSON.stringify(URLRouter.decode(_rtEnc)), JSON.stringify(_rtObj));
+    const _uniObj = { region: 'Ærøskøbing Østfold æøå' };
+    assertEqual('round-trips unicode (UTF-8 safe)',
+      JSON.stringify(URLRouter.decode(URLRouter.encode(_uniObj))), JSON.stringify(_uniObj));
+    assertEqual('decode of garbage → null', URLRouter.decode('!!!not-base64!!!'), null);
+
+    suite('isTimeDimension — name heuristic (no metadata)');
+    VarSelect.tableMetadata = null;
+    assert('"Tid" is time', isTimeDimension('Tid'));
+    assert('contains "tid" is time', isTimeDimension('Tidsperiode'));
+    assert('"Kjonn" is not time', !isTimeDimension('Kjonn'));
+    assert('"ContentsCode" is not time', !isTimeDimension('ContentsCode'));
+
+    suite('isTimeDimension — role.time takes precedence');
+    VarSelect.tableMetadata = { role: { time: ['Maaned'] } };
+    assert('declared time dim is time', isTimeDimension('Maaned'));
+    assert('"Tid" not time when role.time excludes it', !isTimeDimension('Tid'));
+    VarSelect.tableMetadata = null; // restore
+
+    suite('VarSelect — explicit per-table state');
+    VarSelect.tableMetadata = { id: ['Tid'] };
+    VarSelect.activeCodelists = { Region: { codelistId: 'agg_x' } };
+    VarSelect.dimensionValueOrder = { Region: ['01'] };
+    VarSelect.lastClickedIndex = { Region: 5 };
+    VarSelect.committedSelection = { Region: new Set([5]) };
+    VarSelect.urlUpdateTimer = setTimeout(() => {}, 60000);
+    VarSelect.reset();
+    assertEqual('reset() clears tableMetadata', VarSelect.tableMetadata, null);
+    assertEqual('reset() clears activeCodelists', Object.keys(VarSelect.activeCodelists).length, 0);
+    assertEqual('reset() clears dimensionValueOrder', Object.keys(VarSelect.dimensionValueOrder).length, 0);
+    assertEqual('reset() clears the shift-click anchors', Object.keys(VarSelect.lastClickedIndex).length, 0);
+    assertEqual('reset() clears the committed picks', Object.keys(VarSelect.committedSelection).length, 0);
+    assertEqual('reset() clears the URL timer', VarSelect.urlUpdateTimer, null);
+    VarSelect.setListState('Tid', [3, 6]);
+    VarSelect.setListState('Region', [2]);
+    assertEqual('setListState() commits the picks', [...VarSelect.committedSelection.Tid].join(','), '3,6');
+    assertEqual('setListState() anchors on the last pick', VarSelect.lastClickedIndex.Tid, 6);
+    VarSelect.setListState('Tid', []);
+    assert('setListState(dim, []) clears that list', !('Tid' in VarSelect.lastClickedIndex) && !('Tid' in VarSelect.committedSelection));
+    assertEqual('setListState(dim, []) leaves other lists alone', VarSelect.lastClickedIndex.Region, 2);
+    VarSelect.tableMetadata = { id: ['Region'] };
+    VarSelect.dimensionValueOrder = { Region: ['01'] };
+    VarSelect.activeCodelists = { Region: { codelistId: 'agg_x' } };
+    VarSelect.resetSelections();
+    assert('resetSelections() keeps the table', VarSelect.tableMetadata !== null && VarSelect.dimensionValueOrder.Region.length === 1);
+    assert('resetSelections() clears the picks', Object.keys(VarSelect.activeCodelists).length === 0 &&
+      Object.keys(VarSelect.lastClickedIndex).length === 0 && Object.keys(VarSelect.committedSelection).length === 0);
+    VarSelect.reset(); // restore
+
+    suite('getTimeShortcut — only for an unbroken run up to the newest period');
+    VarSelect.tableMetadata = { dimension: { Tid: { category: { index: { '2020': 0, '2021': 1, '2022': 2, '2023': 3 } } } } };
+    assertEqual('newest only → top(1)', getTimeShortcut('Tid', ['2023']), 'top(1)');
+    assertEqual('newest two → top(2)', getTimeShortcut('Tid', ['2022', '2023']), 'top(2)');
+    assertEqual('three up to newest → from(first)', getTimeShortcut('Tid', ['2021', '2022', '2023']), 'from(2021)');
+    assertEqual('one older period → no shortcut', getTimeShortcut('Tid', ['2021']), null);
+    assertEqual('two older periods → no shortcut', getTimeShortcut('Tid', ['2020', '2021']), null);
+    assertEqual('three older periods → no shortcut', getTimeShortcut('Tid', ['2020', '2021', '2022']), null);
+    assertEqual('two with a gap up to newest → no shortcut', getTimeShortcut('Tid', ['2021', '2023']), null);
+    assertEqual('three with a gap up to newest → no shortcut', getTimeShortcut('Tid', ['2020', '2022', '2023']), null);
+    assertEqual('newest plus a code outside the index → no shortcut', getTimeShortcut('Tid', ['agg_a', '2023']), null);
+    assertEqual('no picks → no shortcut', getTimeShortcut('Tid', []), null);
+    VarSelect.tableMetadata = { dimension: { Tid: { category: { index: { '2000': 0, '2005': 1, '2010': 2 } } } } };
+    assertEqual('gaps in the calendar but not the index → from(first)', getTimeShortcut('Tid', ['2000', '2005', '2010']), 'from(2000)');
+    VarSelect.tableMetadata = { dimension: { Tid: { category: { index: { '2020M02': 1, '2020M01': 0 } } } } };
+    assertEqual('newest follows the index, not key order', getTimeShortcut('Tid', ['2020M02']), 'top(1)');
+    VarSelect.tableMetadata = null;
+    assertEqual('no metadata → no shortcut', getTimeShortcut('Tid', ['2023']), null);
+
+    suite('table-metadata — link.related helpers');
+    // Trimmed from the live /tables/10484/metadata response (2026-11-08): a cross-listed
+    // table whose first path says kolltrans, while link.related names jernbane.
+    const _meta10484 = {
+      source: 'Statistisk sentralbyrå',
+      link: { related: [
+        { extension: { relation: 'statistics-homepage', metaid: 'KORTNAVN:jernbane' }, href: 'https://www.ssb.no/jernbane', label: 'Statistikkside' },
+        { extension: { relation: 'about-statistics', metaid: 'KORTNAVN:jernbane' }, href: 'https://www.ssb.no/jernbane#om-statistikken', label: 'Definisjoner og forklaringer' }
+      ] },
+      dimension: {
+        ContentsCode: { label: 'statistikkvariabel', link: {
+          describedby: [{ extension: { Passasjerer: 'urn:ssb:conceptvariable:vardok:1667' } }],
+          related: [
+            { extension: { relation: 'definitions', category: 'Passasjerer', metaid: 'urn:ssb:conceptvariable:vardok:1667' },
+              href: 'https://www.ssb.no/a/metadata/conceptvariable/vardok/1667/nb', label: 'Variabeldefinisjon av Passasjerer (påstigninger)' },
+            { extension: { relation: 'definitions' }, href: 'urn:not-a-page', label: 'skipped' }
+          ] } },
+        Kjonn: { label: 'kjønn', link: {
+          describedby: [{ extension: { Kjonn: 'urn:ssb:classification:klass:2 urn:ssb:classification:klass:999' } }],
+          related: [{ extension: { relation: 'definitions', metaid: 'urn:ssb:classification:klass:2' },
+            href: 'https://www.ssb.no/klass/klassifikasjoner/2', label: 'Standard for kjønn' }] } },
+        Tid: { label: 'år' }
+      }
+    };
+    assertEqual('_relatedByRelation picks by relation', _relatedByRelation(_meta10484.link, 'about-statistics').length, 1);
+    assertEqual('_relatedByRelation skips hrefs that are not pages',
+      _relatedByRelation(_meta10484.dimension.ContentsCode.link, 'definitions').length, 1);
+    assertEqual('_relatedByRelation without link → []', _relatedByRelation(undefined, 'definitions').length, 0);
+    assertEqual('_describedbyUrns reads both shapes and splits URN lists',
+      _describedbyUrns([{ href: 'urn:a' }, { extension: { X: 'urn:b urn:c', Kon: 'Kön' } }]).join(' '), 'urn:a urn:b urn:c');
+    assertEqual('_urnToUrl Klass → readable page, no .json',
+      _urnToUrl('urn:ssb:classification:klass:131'), 'https://www.ssb.no/klass/klassifikasjoner/131');
+    assertEqual('_urnToUrl VarDok', _urnToUrl('urn:ssb:conceptvariable:vardok:1667'),
+      'https://www.ssb.no/a/metadata/conceptvariable/vardok/1667/nb');
+    assertEqual('_urnToUrl unknown URN → null', _urnToUrl('urn:other:1'), null);
+    const _p = (...ids) => ids.map(id => ({ id }));
+    assertEqual('_shortNameFromPaths: paths agree → short name',
+      _shortNameFromPaths([_p('be', 'be01', 'folkemengde', 'SBMENU6924'), _p('be', 'be02', 'folkemengde')]), 'folkemengde');
+    assertEqual('_shortNameFromPaths: cross-listed (10484) → null',
+      _shortNameFromPaths([_p('tr', 'tr01', 'kolltrans', 'SBMENU10894'), _p('tr', 'tr01', 'jernbane')]), null);
+    assertEqual('_shortNameFromPaths: no paths → null', _shortNameFromPaths(undefined), null);
+    assertEqual('_dimensionDefinitionLinks: whole-variable definition',
+      _dimensionDefinitionLinks(_meta10484.dimension.Kjonn).map(e => e.label).join(), 'Standard for kjønn');
+    assertEqual('_dimensionDefinitionLinks skips definitions of single values',
+      _dimensionDefinitionLinks(_meta10484.dimension.ContentsCode).length, 0);
+
+    suite('table-metadata — buildMetadataSection (10484)');
+    currentFullMetadata = _meta10484;
+    AppState.selectedTable = { id: '10484', label: 'test' };
+    const _metaHtml = buildMetadataSection();
+    assert('«Om statistikken» links to the owning statistic (jernbane)', _metaHtml.includes('href="https://www.ssb.no/jernbane#om-statistikken"'));
+    assert('…with the API\'s label', _metaHtml.includes('>Definisjoner og forklaringer</a>'));
+    assert('labels come from t()', _metaHtml.includes('<dt>' + t('metadata.about') + '</dt>') && _metaHtml.includes(t('metadata.title')));
+    assert('definitions list is filled', _metaHtml.includes('class="metadata-links"') && _metaHtml.includes('>Standard for kjønn</a>'));
+    assert('definitions of single values are listed in Tabellinfo', _metaHtml.includes('Variabeldefinisjon av Passasjerer'));
+    assertEqual('a describedby URN without a related link falls back to _urnToUrl',
+      (_metaHtml.match(/klassifikasjoner\/999"/g) || []).length, 1);
+    assertEqual('a URN covered by related is listed once', (_metaHtml.match(/klassifikasjoner\/2"/g) || []).length, 1);
+    assert('no Klass API JSON links', !_metaHtml.includes('/api/klass/'));
+    currentFullMetadata = null;
+    assertEqual('the variable view passes its metadata: same HTML without currentFullMetadata',
+      buildMetadataSection(_meta10484), _metaHtml);
+    assertEqual('no metadata → ""', buildMetadataSection(), '');
+    AppState.selectedTable = null;
+
+    suite('setupMetadataToggle — Tabellinfo opens and closes');
+    const _infoBox = document.createElement('div');
+    _infoBox.innerHTML = buildMetadataSection(_meta10484);
+    setupMetadataToggle(_infoBox);
+    const _toggle = _infoBox.querySelector('.metadata-toggle-btn');
+    const _content = _infoBox.querySelector('.metadata-content');
+    assert('closed at first', _content.style.display === 'none' && _toggle.getAttribute('aria-expanded') === 'false');
+    _toggle.click();
+    assert('click opens it', _content.style.display === 'block' && _toggle.getAttribute('aria-expanded') === 'true');
+    _toggle.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    assert('Enter closes it again', _content.style.display === 'none' && _toggle.getAttribute('aria-expanded') === 'false');
+    setupMetadataToggle(null);
+    assert('no container → no error', true);
+
+    suite('API builder heading — one triangle (the markup has the icon)');
+    ['nb', 'en', 'sv'].forEach(lang =>
+      assert(lang + ' api.builder has no ▶ of its own', !translations[lang]['api.builder'].includes('▶')));
+
+    suite('convertMarkdownLinks — a Statbank table link opens the table in the app');
+    const _linkOf = (md) => new DOMParser().parseFromString(convertMarkdownLinks(md), 'text/html').querySelector('a');
+    const _t1 = _linkOf('Erstattes av [tabell 14700](https://www.ssb.no/statbank/table/14700).');
+    assertEqual('nb table link → #variables/14700', _t1?.getAttribute('href'), '#variables/14700');
+    assert('…with class app-table-link, in the same tab', _t1?.classList.contains('app-table-link') && !_t1.hasAttribute('target'));
+    assertEqual('…keeps its text', _t1?.textContent, 'tabell 14700');
+    assertEqual('en table link', _linkOf('[table 03013](https://www.ssb.no/en/statbank/table/03013)')?.getAttribute('href'), '#variables/03013');
+    assertEqual('trailing slash', _linkOf('[x](https://www.ssb.no/statbank/table/03013/)')?.getAttribute('href'), '#variables/03013');
+    assertEqual('query string', _linkOf('[x](https://www.ssb.no/statbank/table/03013?rxid=abc&lang=no)')?.getAttribute('href'), '#variables/03013');
+    assertEqual('without www', _linkOf('[x](https://ssb.no/statbank/table/03013)')?.getAttribute('href'), '#variables/03013');
+    const _ext = _linkOf('[Feil i KPI](https://www.ssb.no/priser-og-prisindekser/konsumpriser/artikler/feil-i-kpi)');
+    assert('other ssb.no links open in a new tab', _ext?.getAttribute('target') === '_blank' && _ext.getAttribute('rel') === 'noopener' && !_ext.classList.contains('app-table-link'));
+    assert('a lookalike host is not a table link', !_linkOf('[x](https://evilssb.no/statbank/table/03013)')?.classList.contains('app-table-link'));
+    assert('a deeper statbank path stays external', _linkOf('[x](https://www.ssb.no/statbank/table/03013/tableViewLayout1/)')?.getAttribute('target') === '_blank');
+    assert('text is still escaped', convertMarkdownLinks('<b>[x](https://www.ssb.no/statbank/table/1)</b>').startsWith('&lt;b&gt;'));
+
+    suite('Mandatory notes — extension.noteMandatory is keyed on the index in note');
+    // Shapes of the live 14700 and 03013 metadata (2026-11-08)
+    const _notes14700 = {
+      note: ['Undergruppekoder (T), (IV), (HV), (V).',
+             'Denne tabellen erstatter [tabell 03013](https://www.ssb.no/statbank/table/03013).\n\nF.o.m. 2026 er referanseår 2025=100.',
+             'F.o.m. 2026 er referanseår 2025=100.'],
+      extension: { noteMandatory: { '1': true } }
+    };
+    const _notes03013 = {
+      note: ['Referanseår 2015=100.', 'Koronapandemien.', 'Erstattes av ny tabell 14700.', 'Tall for 2025M10 ble rettet <13.11.2025>.'],
+      extension: { noteMandatory: { '2': true, '3': true } }
+    };
+    assertEqual('{"1":true} → note[1] only', JSON.stringify(getMandatoryNotes(_notes14700)), JSON.stringify([_notes14700.note[1]]));
+    assertEqual('{"2":true,"3":true} → both, in note order',
+      JSON.stringify(getMandatoryNotes(_notes03013)), JSON.stringify(_notes03013.note.slice(2)));
+    assertEqual('no noteMandatory → []', getMandatoryNotes({ note: ['a'], extension: {} }).length, 0);
+    assertEqual('false is not mandatory', getMandatoryNotes({ note: ['a'], extension: { noteMandatory: { '0': false } } }).length, 0);
+    assertEqual('null dataset → []', getMandatoryNotes(null).length, 0);
+
+    currentFullMetadata = _notes14700;
+    const _mandHtml = buildMandatoryNotes();
+    const _mandBox = new DOMParser().parseFromString(_mandHtml, 'text/html').querySelector('.info-message.mandatory-notes');
+    assert('box is rendered with the info-message style', !!_mandBox);
+    assertEqual('one paragraph per mandatory note', _mandBox.querySelectorAll('p').length, 1);
+    assert('markdown link becomes a link', _mandBox.querySelector('a')?.textContent === 'tabell 03013' && !_mandHtml.includes(']('));
+    assert('non-mandatory notes stay out of the box', !_mandHtml.includes('Undergruppekoder'));
+    currentFullMetadata = _notes03013;
+    assert('note text is escaped', buildMandatoryNotes().includes('&lt;13.11.2025&gt;'));
+    currentFullMetadata = null;
+    currentData = _notes14700;
+    assert('falls back to the data response when the metadata is missing', buildMandatoryNotes().includes('tabell 03013'));
+    currentData = { note: ['a'], extension: {} };
+    assertEqual('no mandatory notes → empty string', buildMandatoryNotes(), '');
+    currentData = null;
+
+    suite('Status flags — a flagged number keeps its value (09842: "*" = preliminary)');
+    assertEqual('statusLabel("*")', statusLabel('*'), t('table.preliminary'));
+    assertEqual('statusLabel("..")', statusLabel('..'), t('table.notAvailable'));
+    assertEqual('statusLabel("-")', statusLabel('-'), t('table.nil'));
+    assertEqual('statusLabel of an unknown code is the code', statusLabel('?'), '?');
+    // Shape of the live 09842 response for BNP 2022–2024 (2026-11-08), with a ".." added
+    const _flagged = {
+      id: ['ContentsCode', 'Tid'], size: [1, 4],
+      role: { time: ['Tid'], metric: ['ContentsCode'] },
+      dimension: {
+        ContentsCode: { label: 'statistikkvariabel', category: { index: { BNP: 0 }, label: { BNP: 'BNP per innbygger' }, unit: { BNP: { decimals: 0 } } } },
+        Tid: { label: 'år', category: { index: { '2022': 0, '2023': 1, '2024': 2, '2025': 3 }, label: { '2022': '2022', '2023': '2023', '2024': '2024', '2025': '2025' } } }
+      },
+      value: [1050535, 924263, 932583, null],
+      status: { '1': '*', '2': '*', '3': '..' }
+    };
+    const _chart = buildChartData(_flagged, null);
+    assertEqual('chart keeps the flagged numbers, gap only where the value is missing',
+      JSON.stringify(_chart.datasets[0].data), JSON.stringify([1050535, 924263, 932583, null]));
+    assertEqual('chart carries the flags per point', JSON.stringify(_chart.datasets[0].statuses), JSON.stringify([null, '*', '*', '..']));
+    currentData = _flagged;
+    AppState.tableLayout = { rows: ['Tid'], columns: ['ContentsCode'] };
+    const _cells = [...new DOMParser().parseFromString(buildHtmlTable(), 'text/html').querySelectorAll('td.data-cell')];
+    const _cellText = (i) => _cells[i].textContent.replace(/\s/g, ' ');
+    assertEqual('table: unflagged number', _cellText(0), formatNumber(1050535, 0));
+    assertEqual('table: flagged number shows the number and the flag', _cellText(1), formatNumber(924263, 0) + ' *');
+    assertEqual('table: the flag is explained in the tooltip', _cells[1].title, t('table.preliminary'));
+    assert('table: a flagged number is not styled as a missing value', !_cells[1].classList.contains('suppressed-value'));
+    assert('table: a missing value shows its symbol, styled as missing', _cellText(3) === '..' && _cells[3].classList.contains('suppressed-value'));
+    currentData = null;
+    AppState.tableLayout = { rows: [], columns: [] };
+
+    suite('AppState._updateHash — layout in the URL');
+    const _histStart = history.length;
+    AppState.selectedTable = { id: '09772', label: 'test' };
+    AppState.variableSelection = { Tid: 'top(5)' };
+    AppState.tableLayout = { rows: ['Kjonn'], columns: ['Tid'] };
+    AppState._updateHash('table', false);
+    const _hashParts = URLRouter.parseHash();
+    assertEqual('route is the table', _hashParts.route, 'table/09772');
+    assertEqual('l= round-trips the layout',
+      JSON.stringify(URLRouter.decode(_hashParts.params.l)), JSON.stringify(AppState.tableLayout));
+    assertEqual('shouldPush=false adds no history entry', history.length, _histStart);
+    AppState.tableLayout = { rows: ['Tid'], columns: ['Kjonn'] };
+    AppState._updateHash('table');
+    assertEqual('pushes a history entry by default', history.length, _histStart + 1);
+    AppState.reset(); // restore
+    history.replaceState(null, '', location.pathname);
+
+    suite('updateRateWaitNotice — the notice while calls wait for the rate window');
+    const _notice = document.createElement('div');
+    _notice.id = 'rate-wait-notice';
+    _notice.setAttribute('role', 'status');
+    document.body.appendChild(_notice);
+    updateRateWaitNotice(Date.now() + 1500);
+    assertEqual('a wait under 2 s shows nothing', _notice.textContent, '');
+    updateRateWaitNotice(Date.now() + 5000);
+    assert('a longer wait shows the message, with the source name',
+      _notice.textContent.startsWith(tpl('loading.rateWait', AppConfig.source.name)) && _notice.textContent.includes('SSB'));
+    assertEqual('… and the seconds left', _notice.querySelector('.rate-wait-seconds')?.textContent, tpl('loading.rateWaitSeconds', 5));
+    assertEqual('the countdown is aria-hidden (heard once, not every second)',
+      _notice.querySelector('.rate-wait-seconds')?.getAttribute('aria-hidden'), 'true');
+    updateRateWaitNotice(Date.now() + 1000);
+    assertEqual('once shown, a shorter wait keeps it and counts on',
+      _notice.querySelector('.rate-wait-seconds')?.textContent, tpl('loading.rateWaitSeconds', 1));
+    updateRateWaitNotice(null);
+    assertEqual('null (no call waits) empties it', _notice.textContent, '');
+    assert('… and stops the countdown', _rateWaitTimer === null);
+    _notice.remove();
+
     // -----------------------------------------------------------------------
-    showSummary();
+    // Async suites run last, and the summary waits for them. If one never
+    // settles, the summary stays empty.
+    (async () => {
+      suite('_throttledFetch — a call aborted while it waits is never sent');
+      const _origFetch = window.fetch;
+      let _fetchCalls = 0;
+      window.fetch = () => { _fetchCalls++; return Promise.resolve(new Response('{}')); };
+      try {
+        const _ac = new AbortController();
+        _ac.abort();
+        const _err = await api._throttledFetch('https://example.invalid/a', { signal: _ac.signal }).catch(e => e);
+        assertEqual('rejects with AbortError', _err?.name, 'AbortError');
+        assertEqual('fetch() is not called', _fetchCalls, 0);
+        await api._throttledFetch('https://example.invalid/b');
+        assertEqual('without a signal the call goes out', _fetchCalls, 1);
+      } finally {
+        window.fetch = _origFetch;
+      }
+
+      suite('_throttledFetch — the rate window (2 calls per 300 ms here)');
+      // The headless run's virtual clock (--virtual-time-budget) stalls Web
+      // Lock requests, so these tests run without navigator.locks and check the
+      // shared window logic; live-tests/sharedwindow.mjs checks the lock across
+      // two tabs in real time.
+      assert('navigator.locks is there, so tabs claim slots one at a time', typeof navigator.locks?.request === 'function');
+      Object.defineProperty(navigator, 'locks', { value: undefined, configurable: true });
+      const _limitBefore = AppConfig.limits.rateLimit;
+      const _marginBefore = api._rateMarginMs;
+      api._rateMarginMs = 0;   // the window alone; the margin has its own test below
+      const _sent = [];
+      window.fetch = () => { _sent.push(Date.now()); return Promise.resolve(new Response('{}')); };
+      AppConfig.limits.rateLimit = { calls: 4, windowMs: 300 };   // × 0.5 → 2 per 300 ms
+      api._writeRateWindow([]);
+      api._lastRequestTime = 0;
+      try {
+        await Promise.all([1, 2, 3].map(n => api._throttledFetch('https://example.invalid/w' + n)));
+        assertEqual('all three are sent', _sent.length, 3);
+        assert('the second keeps the 100 ms gap, inside the window', _sent[1] - _sent[0] >= 95 && _sent[1] - _sent[0] < 290);
+        assert('the third waits until the first has left the window', _sent[2] - _sent[0] >= 295);
+
+        const _ac = new AbortController();
+        const _t0 = Date.now();
+        const _queued = api._throttledFetch('https://example.invalid/w4', { signal: _ac.signal }).catch(e => e);
+        setTimeout(() => _ac.abort(), 20);
+        const _err = await _queued;
+        assertEqual('a call aborted while it waits rejects with AbortError', _err?.name, 'AbortError');
+        assert('… at once, not when the window frees', Date.now() - _t0 < 200);
+        assertEqual('… and is never sent', _sent.length, 3);
+        assertEqual('… and uses no slot', api._readRateWindow().length, 2);
+
+        // A JSON POST costs two requests (its CORS preflight counts at SSB)
+        assertEqual('a GET costs 1 request', _corsRequestCount({ headers: { 'Accept': 'application/json' } }), 1);
+        assertEqual('a JSON POST costs 2 (preflight + POST)',
+          _corsRequestCount({ method: 'POST', headers: { 'Content-Type': 'application/json' } }), 2);
+        await new Promise(r => setTimeout(r, 310));   // let the window empty
+        _sent.length = 0;
+        await api._throttledFetch('https://example.invalid/p', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+        await api._throttledFetch('https://example.invalid/g');
+        assert('after a JSON POST the window (2) is full, so the next GET waits', _sent[1] - _sent[0] >= 295);
+
+        // Shared by all tabs: the window lives in localStorage
+        assertEqual('one window per API host, not ssb_-prefixed (clearing the cache keeps it)',
+          api._rateKey, 'rateWindow:data.ssb.no');
+        await new Promise(r => setTimeout(r, 310));   // let the window empty
+        _sent.length = 0;
+        localStorage.setItem(api._rateKey, JSON.stringify([Date.now(), Date.now()]));   // another tab just sent 2
+        const _tOther = Date.now();
+        await api._throttledFetch('https://example.invalid/t');
+        assert('calls from another tab fill the window too, so this one waits', _sent[0] - _tOther >= 290);
+
+        // A slot is held for the window + a margin: a request reaches the source a
+        // little after its slot is taken (a JSON POST only after its preflight)
+        assertEqual('the margin is 1 s', _marginBefore, 1000);
+        api._rateMarginMs = 100;
+        api._writeRateWindow([]);
+        _sent.length = 0;
+        await Promise.all([1, 2, 3].map(n => api._throttledFetch('https://example.invalid/m' + n)));
+        assert('with a 100 ms margin, the third waits for 300 + 100 ms', _sent[2] - _sent[0] >= 395);
+
+        // While a call waits, the page hears of it (the 'ratewait' event; utils.js shows the notice)
+        api._rateMarginMs = 0;
+        api._writeRateWindow([]);
+        const _waits = [];
+        const _onWait = (e) => _waits.push(e.detail.until);
+        window.addEventListener('ratewait', _onWait);
+        try {
+          await Promise.all([1, 2, 3].map(n => api._throttledFetch('https://example.invalid/e' + n)));
+          assert('a call that waits announces when it should get its slot', _waits.length >= 2 && typeof _waits[0] === 'number');
+          assertEqual('… and null once none waits', _waits[_waits.length - 1], null);
+          _waits.length = 0;
+          api._writeRateWindow([Date.now(), Date.now()]);   // full, so the next call waits
+          const _ac3 = new AbortController();
+          const _q3 = api._throttledFetch('https://example.invalid/e4', { signal: _ac3.signal }).catch(e => e);
+          setTimeout(() => _ac3.abort(), 150);   // after the 100 ms gap, so it is waiting for a slot
+          await _q3;
+          assert('a call aborted while it waits announces its wait …', typeof _waits[0] === 'number');
+          assertEqual('… and null when it stops', _waits[_waits.length - 1], null);
+          assertEqual('… and no call is left waiting', api._rateWaiters.size, 0);
+        } finally {
+          window.removeEventListener('ratewait', _onWait);
+        }
+      } finally {
+        api._rateMarginMs = _marginBefore;
+        delete navigator.locks;   // back to the browser's own
+        window.fetch = _origFetch;
+        AppConfig.limits.rateLimit = _limitBefore;
+        api._writeRateWindow([]);
+        localStorage.removeItem(api._rateKey);
+      }
+
+      suite('safeApiCall — a cancelled call is silent');
+      const _origShowError = showError;
+      let _errorsShown = 0;
+      showError = () => { _errorsShown++; };
+      try {
+        const _cancelled = await safeApiCall(() => Promise.reject(new DOMException('cancelled', 'AbortError')), 'x');
+        assertEqual('returns null', _cancelled, null);
+        assertEqual('shows no error', _errorsShown, 0);
+        await safeApiCall(() => Promise.reject(new Error('boom')), 'x');
+        assertEqual('another error is still shown', _errorsShown, 1);
+      } finally {
+        showError = _origShowError;
+      }
+    })().catch(e => assert('async suites ran without throwing: ' + e, false)).finally(showSummary);
   </script>
 </body>
 </html>

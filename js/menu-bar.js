@@ -24,7 +24,7 @@ const MenuBar = {
               </button>
               <div class="subject-dropdown">
                 ${group.subjects.map(subjectCode => {
-                  const subjectName = t('subject.name.' + subjectCode) || menuHierarchy.subjectNames[subjectCode];
+                  const subjectName = t('subject.name.' + subjectCode);
                   return `
                     <a href="#topic/${subjectCode}" class="subject-link" data-subject-id="${subjectCode}">
                       ${escapeHtml(subjectName || subjectCode)}

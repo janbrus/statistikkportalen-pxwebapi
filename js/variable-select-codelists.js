@@ -35,8 +35,10 @@ function sortCodelistOptions(codelists) {
  */
 async function preloadCodelistOrdering(dimensions) {
   const promises = dimensions.map(async dimCode => {
-    const dimension = tableMetadata.dimension[dimCode];
-    if (!dimension) return;
+    const dimension = VarSelect.tableMetadata.dimension[dimCode];
+    // Already known for this table: reset() clears the order on a table load,
+    // resetSelections() («Fyll inn standardvalg») keeps it
+    if (!dimension || VarSelect.dimensionValueOrder[dimCode]) return;
 
     const codelists = dimension.extension?.codelists || [];
     if (codelists.length === 0) return;
@@ -50,7 +52,7 @@ async function preloadCodelistOrdering(dimensions) {
     );
 
     if (data && data.values && Array.isArray(data.values)) {
-      dimensionValueOrder[dimCode] = data.values.flatMap(v =>
+      VarSelect.dimensionValueOrder[dimCode] = data.values.flatMap(v =>
         (v.valueMap && Array.isArray(v.valueMap) && v.valueMap.length > 0)
           ? v.valueMap : [v.code]
       );
@@ -65,7 +67,7 @@ async function preloadCodelistOrdering(dimensions) {
  *
  * When the user selects a codelist from the dropdown:
  * 1. Fetch the codelist's value definitions from the API
- * 2. Store the allowed codes in activeCodelists[dimCode]
+ * 2. Store the allowed codes in VarSelect.activeCodelists[dimCode]
  * 3. Show only matching values in the value list (hide others)
  * 4. Update the elimination badge (codelists can override the dimension's default)
  * 5. Reset any existing selection
@@ -82,7 +84,7 @@ function setupCodelistDropdowns() {
 
       if (!codelistId) {
         // "Velg fritt" — remove codelist, restore original values and elimination
-        activeCodelists[dimCode] = null;
+        VarSelect.activeCodelists[dimCode] = null;
 
         // Clear from AppState
         delete AppState.activeCodelistIds[dimCode];
@@ -90,7 +92,7 @@ function setupCodelistDropdowns() {
         restoreOriginalValueList(dimCode, card);
 
         // Restore the dimension's original elimination status
-        const dimension = tableMetadata.dimension[dimCode];
+        const dimension = VarSelect.tableMetadata.dimension[dimCode];
         const originalElimination = dimension.extension?.elimination === true;
         updateEliminationBadge(card, originalElimination);
       } else {
@@ -108,7 +110,7 @@ function setupCodelistDropdowns() {
             const codelistInfo = extractCodelistCodes(codelistData);
 
             // Get dimension's original elimination status
-            const dimension = tableMetadata.dimension[dimCode];
+            const dimension = VarSelect.tableMetadata.dimension[dimCode];
             const originalElimination = dimension.extension?.elimination === true;
 
             // IMPORTANT: If the dimension is originally optional, it remains optional
@@ -117,7 +119,7 @@ function setupCodelistDropdowns() {
             const effectiveElimination = originalElimination || (codelistData.elimination === true);
 
             // Store codelist info with effective elimination property
-            activeCodelists[dimCode] = {
+            VarSelect.activeCodelists[dimCode] = {
               codelistId: codelistId,
               elimination: effectiveElimination,
               isAggregated: codelistInfo.isAggregated,
@@ -140,8 +142,18 @@ function setupCodelistDropdowns() {
         }
       }
 
-      // Reset selection when switching codelist
-      container.dataset.mode = 'specific';
+      // Specific selections are tied to the previous value list and have to
+      // be cleared on every codelist switch — but the user's MODE choice
+      // (star / top) is a higher-level intent that survives. Preserve star
+      // unconditionally (every codelist supports "all"); preserve top only
+      // for time dimensions, which is where top(N) is semantically defined.
+      const previousMode = container.dataset.mode;
+      const preservedMode = previousMode === 'star'
+        ? 'star'
+        : (previousMode === 'top' && isTimeDimension(dimCode))
+        ? 'top'
+        : 'specific';
+      container.dataset.mode = preservedMode;
       container.querySelectorAll('.value-list-item').forEach(item => {
         item.classList.remove('selected');
       });
@@ -239,7 +251,7 @@ function applyCodelistToValueList(dimCode, card) {
   const container = card.querySelector('.value-list-container');
   if (!container) return;
 
-  const codelistInfo = activeCodelists[dimCode];
+  const codelistInfo = VarSelect.activeCodelists[dimCode];
   if (!codelistInfo) return;
 
   logger.log('[VariableSelect] Applying codelist to dimension ' + dimCode + ':', {
@@ -291,6 +303,8 @@ function renderCodelistValues(dimCode, card, codelistValues) {
   });
 
   container.innerHTML = html;
+  // New list, new positions: the old shift-click anchor no longer points anywhere
+  VarSelect.setListState(dimCode, []);
 }
 
 /**
@@ -306,10 +320,11 @@ function restoreOriginalValueList(dimCode, card) {
   if (!container) return;
 
   // Re-render from original metadata (includes codelist-based ordering if available)
-  const dimension = tableMetadata.dimension[dimCode];
+  const dimension = VarSelect.tableMetadata.dimension[dimCode];
   if (dimension) {
-    const isTimeDim = dimCode === 'Tid' || dimCode.toLowerCase().includes('tid');
+    const isTimeDim = isTimeDimension(dimCode);
     container.innerHTML = renderValueList(dimCode, dimension, isTimeDim);
+    VarSelect.setListState(dimCode, []);
     logger.log('[VariableSelect] Restored original values for dimension ' + dimCode);
   }
 

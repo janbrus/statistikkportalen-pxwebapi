@@ -1,10 +1,14 @@
 /**
- * Emnekonfigurasjon for SCBs statistikkbank
+ * Emnekonfigurasjon for SCBs statistikdatabas (SCB-instansen)
+ *
+ * Lastes ikke av index.html. Ved utrulling av SCB-instansen erstatter denne
+ * filen subjects.js, og config-sv.js erstatter config.js. Samme struktur og
+ * registrering som subjects.js; emnekodene og -navnene er SCBs. Fra 1.4.5.
  *
  * subjectGroups: Toppnivågruppering av emner (vises som fliser på forsiden).
  *   Hver gruppe har en id, en flerspråklig label og en liste med emne-koder
  *   (subjects). label er et objekt med én oversettelse per UI-språk
- *   (nb/en/sv ...), der nøklene matcher språkkodene i AppConfig.languages.
+ *   (sv/en), der nøklene matcher språkkodene i AppConfig.languages.
  *
  * subjectNames: Emne-kode til flerspråklig visningsnavn (samme {språk: tekst}-
  *   struktur som group.label).
@@ -12,16 +16,11 @@
  * Alle menytekster (gruppe- og emnenavn) bor i DENNE filen — ikke i
  * translations.js. Ved oppstart registreres de i den delte
  * oversettelsesordboka under nøklene `subject.group.{id}` og
- * `subject.name.{kode}`, slik at t() løser dem på vanlig måte. Målet er at kun
- * subjects.js og config.js trenger endring for å sette opp en ny instans.
+ * `subject.name.{kode}`, slik at t() løser dem på vanlig måte.
  *
- * For en annen instans (f.eks. SCB): bytt ut denne filen med tilsvarende
- * struktur for den aktuelle statistikkbanken.
- *
- * NB: scripts/generate-seo-pages.mjs leser også denne filen (via node:vm)
- * for å generere statiske SEO-sider — hold strukturen kompatibel. Der kjøres
- * filen uten translations.js, så registreringen nedenfor hoppes over (guard
- * på `typeof translations`) og labelene leses som objekter direkte.
+ * Må lastes etter translations.js. Uten translations (f.eks. i et
+ * Node-skript som leser konfigurasjonen) hoppes registreringen over, og
+ * labelene kan leses som objekter direkte.
  */
 const SubjectConfig = {
   subjectGroups: {
@@ -94,8 +93,8 @@ const SubjectConfig = {
 
 // Registrer menytekstene i den delte oversettelsesordboka (translations.js),
 // slik at t('subject.group.{id}') og t('subject.name.{kode}') fungerer.
-// Hoppes over når filen kjøres uten translations (f.eks. i SEO-generatorens
-// node:vm-sandkasse), der labelene leses som objekter direkte.
+// Hoppes over når filen kjøres uten translations, der labelene leses som
+// objekter direkte.
 if (typeof translations !== 'undefined') {
   const register = (key, byLang) => {
     for (const [lang, text] of Object.entries(byLang)) {
