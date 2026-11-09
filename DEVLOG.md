@@ -415,6 +415,10 @@ kjørte den virkelige appen i Chromium mot SSB. De ligger utenfor repoet, i
       skriptene og `test.html` 343/343. Testskriptene mot repo-mappen
       (`APP_DIR`/`SRC_DIR`): `version` 7/7 og `ratewait` 9/9 mot SSB, med 6
       forespørsler hver, og `scb` 12/12 mot SCB, med høyst 13 per 10 s.
+27. **Lisensen** (vedlikeholderens valg, 2026-11-09). `LICENCE.md` har fått linjen
+    «Copyright 2026 Jan Bruusgaard» under «Copyright 2026 Hallvard Mørck». MIT krever
+    at den opprinnelige linjen følger med i alle kopier, så den står. Resten av
+    lisensen er uendret.
 
 `test.html`: 204/204 etter steg 8, 216 etter steg 9, 254 etter steg 10, 267 etter
 steg 11, 276 etter steg 14 og 15, 285 etter steg 16, 291 etter steg 17, 295/295
