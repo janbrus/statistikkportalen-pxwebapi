@@ -828,6 +828,42 @@
         showError = _origShowError;
       }
 
+      suite('URLRouter — a route that redirects also renders where it goes');
+      // navigateTo() only updates history. These redirects used to leave the page
+      // unrendered (a fresh load of #table/09772 stayed on «Initialiserer...»).
+      const _origRender = renderCurrentView;
+      const _origView = AppState.currentView;
+      const _origHash = location.hash;
+      const _rendered = [];
+      renderCurrentView = () => { _rendered.push(AppState.currentView); };   // no view, no API calls
+      const _routeTo = async (hash) => {
+        history.replaceState(null, '', hash);
+        _rendered.length = 0;
+        await URLRouter.handleRoute();
+        return { hash: location.hash, rendered: _rendered.join() };
+      };
+      try {
+        let _r = await _routeTo('#table/09772');
+        assertEqual('#table/{id} without v → #variables/{id}', _r.hash, '#variables/09772');
+        assertEqual('… and the variable view is rendered', _r.rendered, 'variables');
+        const _c = URLRouter.encode({ Region: 'agg_Fylker' });
+        _r = await _routeTo('#table/09772?c=' + _c);
+        assertEqual('… an active codelist (c) goes along', _r.hash, '#variables/09772?c=' + _c);
+        _r = await _routeTo('#table/09772?v=!!!');
+        assertEqual('a v that can\'t be decoded counts as none', _r.hash, '#variables/09772');
+        _r = await _routeTo('#variables/');
+        assertEqual('#variables/ without a table number → #home', _r.hash, '#home');
+        assertEqual('… and the front page is rendered', _r.rendered, 'home');
+        _r = await _routeTo('#table/');
+        assertEqual('#table/ without a table number → #home', _r.hash, '#home');
+        assertEqual('… and the front page is rendered', _r.rendered, 'home');
+      } finally {
+        renderCurrentView = _origRender;
+        history.replaceState(null, '', location.pathname + location.search + _origHash);
+        AppState.resetTableState();
+        AppState.currentView = _origView;
+      }
+
       suite('index.html — scripts, cache busting and the page shell');
       // Read as text and parsed with DOMParser, which runs none of its scripts
       const _ixText = await _readText('index.html');

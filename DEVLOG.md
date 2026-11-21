@@ -442,13 +442,29 @@ kjørte den virkelige appen i Chromium mot SSB. De ligger utenfor repoet, i
       hver den ventede FAIL: gammel `?v=`, nytt script uten `?v=`, to scripts byttet
       om, manglende CSS-fil, mellomrom i `#rate-wait-notice`, manglende id, dobbel
       id, analytics-snutten flyttet og klassen på hjelpelenken fjernet.
+29. **Omdirigerte ruter viser siden de går til** (vedlikeholderen ba om det,
+    2026-11-21). Funnet under planleggingen av innliming av API-spørringer. Tre
+    ruter i `router.js` byttet URL med `navigateTo()`, men viste ikke noe. Det
+    gjelder `#table/{id}` uten `v`, og `#variables/` og `#table/` uten
+    tabellnummer. Ved oppstart ble for eksempel `#table/09772` stående på
+    «Initialiserer...». Med tilbake/fram ble forrige visning stående. Feilen
+    fantes også i 1.4.5, så den står i CHANGELOG.
+    - Hver rute kaller nå `handleRoute()` etter `navigateTo()`. `#table/{id}` går
+      til `#variables/{id}` og tar med en aktiv kodeliste (`c`). En `v` som ikke
+      kan dekodes, regnes som ingen. Ruter uten tabellnummer går til `#home`.
+    - Verifisert: ny suite i `test.html` (8 sjekker) stubber `renderCurrentView`, så
+      den kaller ingen API. 363/363. Med `router.js` fra `HEAD` i en kopi feilet de 4
+      ventede sjekkene: tre visninger som ikke ble vist, og `c` som ble borte.
+      Live med `cdp.mjs`: en fersk lasting av `#table/09772` viser variabelkortene
+      med `#variables/09772`. `#variables/` og `#table/` gir forsiden med `#home`.
+      Kjøringen sendte 4 forespørsler til SSB og ga ingen konsollfeil.
 
 `test.html`: 204/204 etter steg 8, 216 etter steg 9, 254 etter steg 10, 267 etter
 steg 11, 276 etter steg 14 og 15, 285 etter steg 16, 291 etter steg 17, 295/295
 etter steg 18, 297/297 etter steg 19, 306/306 etter steg 21, 310/310 etter
 steg 22, 326/326 etter steg 23, 329/329 med én teller for alle faner, 331/331
-med margin og 343/343 etter steg 24 og 25, også i git-repoet (steg 26), og
-355/355 etter steg 28.
+med margin og 343/343 etter steg 24 og 25, også i git-repoet (steg 26),
+355/355 etter steg 28 og 363/363 etter steg 29.
 
 **Sammenligning med 1.4.5.** CHANGELOG bygger på:
 - norske tekstnøkler i 1.4.5 og `sp.1.6` (76 nye, 1 fjernet);

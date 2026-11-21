@@ -447,7 +447,7 @@ The `v`, `c`, and `l` parameters are JSON objects encoded as URL-safe Base64:
 - `c` = activeCodelistIds: `{ "Region": "vs_RegionKommune" }`
 - `l` = tableLayout: `{ "rows": ["Tid"], "columns": ["Kjonn","Region"] }`
 
-`URLRouter.navigateTo()` only updates history and never renders, so follow it with `URLRouter.handleRoute()` or `renderCurrentView()`. The app listens for `popstate`, not `hashchange`. `AppState.setView()` writes the hash only for `variables` and `table`; home, search and topic manage their own URLs. `handleRoute()` also accepts `#help` as an alias for `#hjelp`, redirects legacy `#browser*` routes, sends unknown routes home and treats a bare `#?q=…` as a search.
+`URLRouter.navigateTo()` only updates history and never renders, so follow it with `URLRouter.handleRoute()` or `renderCurrentView()`. The app listens for `popstate`, not `hashchange`. `AppState.setView()` writes the hash only for `variables` and `table`; home, search and topic manage their own URLs. `handleRoute()` also accepts `#help` as an alias for `#hjelp`, redirects legacy `#browser*` routes, sends unknown routes home and treats a bare `#?q=…` as a search. A `#table/{id}` without a `v` that decodes goes to `#variables/{id}` (keeping `c`), and `#variables/` or `#table/` without a table number goes home. Each such redirect replaces the history entry and then renders its target.
 
 Pasted saved-query links are recognised by `detectSavedQueryId()` in `utils.js` (`/statbank/sq/{id}`, `?sq={id}`, `#sq/{id}`), called from the search inputs in `front-page.js` and `search-view.js`.
 
