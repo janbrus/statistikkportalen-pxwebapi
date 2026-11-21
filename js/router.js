@@ -314,7 +314,7 @@ const URLRouter = {
     if (!tableId) {
       logger.warn('[Router] No table ID in variables route');
       this.navigateTo('home', {}, false);
-      return;
+      return this.handleRoute();   // navigateTo() doesn't render
     }
 
     logger.log('[Router] Variables route - tableId:', tableId);
@@ -376,7 +376,7 @@ const URLRouter = {
     if (!tableId) {
       logger.warn('[Router] No table ID in table route');
       this.navigateTo('home', {}, false);
-      return;
+      return this.handleRoute();   // navigateTo() doesn't render
     }
 
     logger.log('[Router] Table route - tableId:', tableId);
@@ -397,8 +397,9 @@ const URLRouter = {
     // Validate that we have variable selections (required for table view)
     if (!variableSelection || Object.keys(variableSelection).length === 0) {
       logger.warn('[Router] No variable selection in table route - redirecting to variables');
-      this.navigateTo(`variables/${tableId}`, {}, false);
-      return;
+      // Keeps an active codelist (c); the variable view has no use for a layout
+      this.navigateTo(`variables/${tableId}`, { c: params.c }, false);
+      return this.handleRoute();   // navigateTo() doesn't render
     }
 
     logger.log('[Router] Decoded variable selection:', variableSelection);

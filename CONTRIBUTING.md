@@ -46,6 +46,13 @@ grønne (`x/x passed`).
   rekkefølge som `index.html`, og deretter noen få view-filer (`variable-select-*`,
   `table-display.js`, `table-metadata.js`, `chart-view.js`) som er trygge å laste
   alene. Trenger en test et nytt script, legg det inn i `test.html`.
+- Suiten for `index.html` leser `index.html` og `ARCHITECTURE.md` som tekst. Den
+  sjekker at hver `?v=` matcher `VERSION`, at scriptene lastes i rekkefølgen under
+  «Load order» i `ARCHITECTURE.md`, og at id-ene scriptene slår opp, finnes. En
+  nettleser kan ikke lese filer fra `file://`. Da vises suiten som SKIP, og
+  sammendraget blir oransje. Kjør den ved å servere mappen
+  (`python3 -m http.server`), eller med Chrome-flagget
+  `--allow-file-access-from-files`.
 
 ## Husregler
 

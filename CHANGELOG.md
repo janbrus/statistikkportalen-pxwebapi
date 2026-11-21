@@ -52,3 +52,5 @@ Sammenlignet med 1.4.5, siste versjon bare for PxWebApi. Utviklingsversjonene
 - Byttet du språk og straks åpnet en annen tabell, kunne appen vise tallene fra den
   første tabellen.
 - På mobil var siden bredere enn skjermen, og språkvalget havnet utenfor til høyre.
+- En lenke til en tabell uten utvalg, eller uten tabellnummer, ble stående på
+  «Initialiserer...». Nå åpnes variabelvalget for tabellen, eller forsiden.
