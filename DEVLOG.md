@@ -419,12 +419,36 @@ kjørte den virkelige appen i Chromium mot SSB. De ligger utenfor repoet, i
     «Copyright 2026 Jan Bruusgaard» under «Copyright 2026 Hallvard Mørck». MIT krever
     at den opprinnelige linjen følger med i alle kopier, så den står. Resten av
     lisensen er uendret.
+28. **Test for `index.html`** (vedlikeholderen ba om det, 2026-11-20). En ny suite
+    sist i `test.html` leser `index.html` som tekst og parser den med `DOMParser`,
+    som ikke kjører scriptene. Den har 12 sjekker:
+    - `version.js` står først og uten `?v=`. De 33 andre filene har `?v=` lik
+      `VERSION`, og alle 34 filene finnes.
+    - Scriptene står i samme rekkefølge som blokken under «Load order» i
+      `ARCHITECTURE.md`. Testen leser blokken, så rekkefølgen står ikke to steder.
+      Scriptene `test.html` selv laster, står i samme rekkefølge som i `index.html`.
+      Analytics-snutten står rett etter `config.js`, og init-scriptet står sist.
+    - De 15 id-ene scriptene slår opp i det statiske skallet, finnes, og ingen id
+      står to ganger. `#rate-wait-notice` er helt tom: `main.css` viser den med
+      `:not(:empty)`, så et mellomrom ville gitt en tom boks. Den har også
+      `role="status"`. Hjelpelenken i bunnteksten har klassen `app-help-link`.
+    - `fetch()` kan ikke lese `file://`, så testen bruker `XMLHttpRequest`. Fra
+      `file://` krever Chrome da flagget `--allow-file-access-from-files`, som nå
+      står i kommandoen i `CLAUDE.md`. Uten flagget blir suiten én SKIP, og
+      sammendraget blir oransje. Over http kjører suiten alltid. `CONTRIBUTING.md`
+      og `ARCHITECTURE.md` sier det samme.
+    - Verifisert: 355/355 fra `file://` med flagget og over http, og 343/343 med én
+      SKIP uten flagget. Ni feil lagt inn med vilje i en kopi av `index.html` ga
+      hver den ventede FAIL: gammel `?v=`, nytt script uten `?v=`, to scripts byttet
+      om, manglende CSS-fil, mellomrom i `#rate-wait-notice`, manglende id, dobbel
+      id, analytics-snutten flyttet og klassen på hjelpelenken fjernet.
 
 `test.html`: 204/204 etter steg 8, 216 etter steg 9, 254 etter steg 10, 267 etter
 steg 11, 276 etter steg 14 og 15, 285 etter steg 16, 291 etter steg 17, 295/295
 etter steg 18, 297/297 etter steg 19, 306/306 etter steg 21, 310/310 etter
 steg 22, 326/326 etter steg 23, 329/329 med én teller for alle faner, 331/331
-med margin og 343/343 etter steg 24 og 25, også i git-repoet (steg 26).
+med margin og 343/343 etter steg 24 og 25, også i git-repoet (steg 26), og
+355/355 etter steg 28.
 
 **Sammenligning med 1.4.5.** CHANGELOG bygger på:
 - norske tekstnøkler i 1.4.5 og `sp.1.6` (76 nye, 1 fjernet);

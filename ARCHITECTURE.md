@@ -6,7 +6,7 @@ The app fetches the full table catalogue (~7 000 tables) from SSB's PxWebApi v2,
 
 ## Load order and dependencies
 
-Scripts are loaded in this exact order. Code that runs at load time can only use scripts above it; function bodies run later and can also use scripts below (`router.js` calls `BrowserState`, `browser-state.js` calls `SearchEnhanced`):
+Scripts are loaded in this exact order. Code that runs at load time can only use scripts above it; function bodies run later and can also use scripts below (`router.js` calls `BrowserState`, `browser-state.js` calls `SearchEnhanced`). `test.html` checks `index.html` against this block, so keep one file per line, at the start of the line, and the block as the first one under this heading:
 
 ```
 version.js          — VERSION constant (displayed in footer)

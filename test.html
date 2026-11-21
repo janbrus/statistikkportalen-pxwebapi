@@ -8,10 +8,12 @@
     h1 { font-size: 1.2em; }
     .pass { color: #4caf50; }
     .fail { color: #f44336; }
+    .skip { color: #ffb74d; }
     .suite { margin: 1em 0 0.3em; font-weight: bold; color: #90caf9; }
     .result { margin-left: 1.5em; }
     #summary { margin-top: 1.5em; padding: 0.5em; font-weight: bold; }
     #summary.all-pass { background: #1b5e20; color: #a5d6a7; }
+    #summary.has-skip { background: #e65100; color: #ffe0b2; }
     #summary.has-fail { background: #b71c1c; color: #ef9a9a; }
   </style>
 </head>
@@ -87,10 +89,33 @@
       _out.appendChild(el);
     }
 
+    // A check that could not run here; counted apart, so the summary isn't green
+    let _skipped = 0;
+    function skip(description) {
+      const el = document.createElement('div');
+      el.className = 'result';
+      el.innerHTML = '<span class="skip">SKIP</span> ' + description;
+      _skipped++;
+      _out.appendChild(el);
+    }
+
     function showSummary() {
       const total = _passed + _failed;
-      _summary.textContent = _passed + '/' + total + ' passed' + (_failed ? ', ' + _failed + ' FAILED' : '');
-      _summary.className = _failed ? 'has-fail' : 'all-pass';
+      _summary.textContent = _passed + '/' + total + ' passed' + (_failed ? ', ' + _failed + ' FAILED' : '') +
+        (_skipped ? ', ' + _skipped + ' skipped' : '');
+      _summary.className = _failed ? 'has-fail' : _skipped ? 'has-skip' : 'all-pass';
+    }
+
+    // A file next to test.html as text, or null if it can't be read. Not fetch():
+    // it can't read file:// at all. XMLHttpRequest can, but in Chrome only with
+    // --allow-file-access-from-files; over http (python3 -m http.server) always.
+    function _readText(path) {
+      return new Promise(resolve => {
+        const xhr = new XMLHttpRequest();
+        xhr.onload = () => resolve(xhr.status === 200 ? xhr.responseText : null);
+        xhr.onerror = () => resolve(null);
+        try { xhr.open('GET', path); xhr.send(); } catch (e) { resolve(null); }
+      });
     }
 
     // -----------------------------------------------------------------------
@@ -801,6 +826,83 @@
         assertEqual('another error is still shown', _errorsShown, 1);
       } finally {
         showError = _origShowError;
+      }
+
+      suite('index.html — scripts, cache busting and the page shell');
+      // Read as text and parsed with DOMParser, which runs none of its scripts
+      const _ixText = await _readText('index.html');
+      const _archText = await _readText('ARCHITECTURE.md');
+      if (_ixText === null || _archText === null) {
+        skip('index.html can\'t be read from here: serve the folder (python3 -m http.server), ' +
+          'or run Chrome with --allow-file-access-from-files');
+      } else {
+        const _ix = new DOMParser().parseFromString(_ixText, 'text/html');
+        const _bare = (url) => url.split('?')[0];
+        const _isLocal = (url) => !/^([a-z]+:)?\/\//i.test(url);
+        const _ixScripts = [..._ix.querySelectorAll('script')];
+        const _ixSrcs = _ixScripts.filter(s => s.hasAttribute('src')).map(s => s.getAttribute('src'));
+        const _ixCss = [..._ix.querySelectorAll('link[rel="stylesheet"]')].map(l => l.getAttribute('href'));
+
+        // Cache busting: every ?v= matches VERSION, so a browser never mixes old and new files
+        const _ver = VERSION.replace(/^v/, '');
+        assertEqual('version.js is the first script, without ?v=', _ixSrcs[0], 'js/version.js');
+        const _busted = [..._ixSrcs.slice(1), ..._ixCss].filter(_isLocal);
+        const _stale = _busted.filter(u => u !== _bare(u) + '?v=' + _ver);
+        assert('the other ' + _busted.length + ' scripts and stylesheets end in ?v=' + _ver + ' (VERSION ' + VERSION + ')' +
+          (_stale.length ? ' — not: ' + _stale.join(', ') : ''), _stale.length === 0);
+        const _linked = [..._ixSrcs, ..._ixCss].filter(_isLocal).map(_bare);
+        const _gone = (await Promise.all(_linked.map(async f => (await _readText(f)) === null ? f : null))).filter(Boolean);
+        assert('all ' + _linked.length + ' files they name exist' + (_gone.length ? ' — missing: ' + _gone.join(', ') : ''),
+          _gone.length === 0);
+
+        // Load order: exactly the list in ARCHITECTURE.md «Load order» (one file per line there)
+        const _block = _archText.split('## Load order and dependencies')[1]?.split('```')[1] || '';
+        const _documented = [..._block.matchAll(/^([\w./-]+\.js)\b/gm)].map(m => 'js/' + m[1]);
+        const _loaded = _ixSrcs.filter(_isLocal).map(_bare);
+        let _orderDiff = '';
+        for (let i = 0; i < Math.max(_loaded.length, _documented.length) && !_orderDiff; i++) {
+          if (_loaded[i] !== _documented[i]) {
+            _orderDiff = ' — no. ' + (i + 1) + ' is ' + (_loaded[i] || 'missing') + ', ARCHITECTURE.md has ' + (_documented[i] || 'nothing');
+          }
+        }
+        assert('the ' + _loaded.length + ' scripts load in the order ARCHITECTURE.md «Load order» gives' + _orderDiff,
+          _documented.length > 0 && !_orderDiff);
+        // test.html loads a subset, in index.html's order (its own script tags, above)
+        const _ownSrcs = [...document.querySelectorAll('script[src]')].map(s => _bare(s.getAttribute('src')));
+        let _from = 0;
+        const _misplaced = _ownSrcs.filter(src => {
+          const i = _loaded.indexOf(src, _from);
+          if (i >= 0) _from = i + 1;
+          return i < 0;
+        });
+        assert('the ' + _ownSrcs.length + ' scripts test.html loads come in index.html\'s order' +
+          (_misplaced.length ? ' — not: ' + _misplaced.join(', ') : ''), _misplaced.length === 0);
+        const _cfgAt = _ixScripts.findIndex(s => _bare(s.getAttribute('src') || '') === 'js/config.js');
+        const _afterCfg = _ixScripts[_cfgAt + 1];
+        assert('the analytics snippet comes right after config.js', _cfgAt >= 0 && !!_afterCfg &&
+          !_afterCfg.hasAttribute('src') && _afterCfg.textContent.includes('AppConfig.analytics'));
+        const _init = _ixScripts[_ixScripts.length - 1];
+        assert('the init script comes last, after every script it uses',
+          !_init.hasAttribute('src') && _init.textContent.includes('DOMContentLoaded'));
+
+        // The page shell: the ids the inline scripts read, and those js/ finds in the
+        // static page (utils.js: loading-indicator, rate-wait-notice, error-display,
+        // content; router.js: content). Views build everything else.
+        const _inlineJs = _ixScripts.filter(s => !s.hasAttribute('src')).map(s => s.textContent).join('\n');
+        const _ids = [...new Set([..._inlineJs.matchAll(/getElementById\('([^']+)'\)/g)].map(m => m[1])
+          .concat(['content', 'loading-indicator', 'error-display', 'rate-wait-notice']))];
+        const _noId = _ids.filter(id => !_ix.getElementById(id));
+        assert('the ' + _ids.length + ' ids the scripts look up are in the page' +
+          (_noId.length ? ' — missing: ' + _noId.join(', ') : ''), _noId.length === 0);
+        const _allIds = [..._ix.querySelectorAll('[id]')].map(el => el.id);
+        const _twice = _allIds.filter((id, i) => _allIds.indexOf(id) !== i);
+        assert('no id is used twice' + (_twice.length ? ' — ' + _twice.join(', ') : ''), _twice.length === 0);
+        const _ixNotice = _ix.getElementById('rate-wait-notice');
+        assert('#rate-wait-notice is empty, not even a space (main.css shows it once it is :not(:empty))',
+          _ixNotice?.childNodes.length === 0);
+        assertEqual('… and a live region', _ixNotice?.getAttribute('role'), 'status');
+        assert('the footer help link has class app-help-link (the delegated click listener)',
+          !!_ix.getElementById('footer-help-link')?.classList.contains('app-help-link'));
       }
     })().catch(e => assert('async suites ran without throwing: ' + e, false)).finally(showSummary);
   </script>
