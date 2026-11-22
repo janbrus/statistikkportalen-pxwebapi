@@ -458,13 +458,139 @@ kjørte den virkelige appen i Chromium mot SSB. De ligger utenfor repoet, i
       Live med `cdp.mjs`: en fersk lasting av `#table/09772` viser variabelkortene
       med `#variables/09772`. `#variables/` og `#table/` gir forsiden med `#home`.
       Kjøringen sendte 4 forespørsler til SSB og ga ingen konsollfeil.
+30. **Lime inn eller redigere en PxWebApi-spørring** (vedlikeholderens valg,
+    2026-11-22). Branchen `paste-api-query`. Målet er å teste tabellvisningen med en
+    bestemt spørring uten å klikke fram utvalget. Spørringen kjøres i appen, som
+    samme POST som «Hent data». Selve GET-URL-en blir ikke testet mot SSB. Det skjer
+    i tre steg, og vedlikeholderen gir klarsignal mellom hvert.
+    - **Steg 1: parseren** (ingen synlig endring). `parseApiQuery(text, tableId)` i
+      `utils.js` gjør en GET-URL eller en POST-body om til et vanlig utvalg.
+      `apiQueryRoute()` gir `#table/{id}?v=&c=`, eller `#variables/{id}` når
+      ingenting er valgt. `openApiQuery()` og `openPastedQuery()` (også
+      sq-lenker) åpner spørringen. Reglene står i `ARCHITECTURE.md` under «URL
+      state encoding»:
+      - `%5B` avgjør om `+` er mellomrom (kodet URL) eller pluss (klartekst);
+      - `[...]` rundt en kode fjernes i GET, men ikke i POST;
+      - komma inne i `[]` og `()` splitter ikke, og en bar `range(a,b)` godtas;
+      - verten må være `AppConfig.apiBaseUrl` pluss `/`, og tabellnummeret bare
+        `[A-Za-z0-9_-]`.
+    - Kjent begrensning: i klartekstformen er `+` alltid pluss, så en kode med
+      mellomrom kommer tilbake med `+`. Fra den kodede URL-en blir den riktig.
+    - Verifisert: 6 nye suiter i `test.html` (47 sjekker) uten nettverk. De bygger
+      URL-en slik `updateQueryPreview()` gjør, og leser både den kodede formen og
+      klartekstformen tilbake til samme utvalg. Body-en fra `api.buildPostBody()`
+      leses også tilbake. `openPastedQuery` åpner `#table/07459` med `v` og `c`,
+      med `renderCurrentView` stubbet. 410/410. Åtte feil lagt inn med vilje i en
+      kopi av `utils.js` ga hver minst én FAIL: `+` alltid som mellomrom, klammer
+      som ikke fjernes, splitting på alle komma, ingen `/` etter basen,
+      linjeskift som blir stående, `*` som ikke normaliseres, tomt utvalg til
+      `table/`, og streng `decodeURIComponent`. Den siste stoppet først hele
+      testkjøringen, så testene fanger nå et unntak og viser det som en FAIL.
+    - **Steg 2: «Rediger» i API-byggeren.**
+      - Knappen står ved Data-URL og åpner et tekstfelt under
+        forhåndsvisningen, som blir stående som den er. Feltet starter med det
+        som vises: URL-en i GET-modus (klartekst eller kodet, etter
+        avkrysningsboksen) og bodyen i POST-modus.
+      - «Kjør spørringen» eller Ctrl/Cmd+Enter kjører `parseApiQuery()` og
+        `openApiQuery()`. Tekst parseren ikke kjenner igjen, gir
+        `api.editInvalid` i feltet, uten navigering. Appens egne kontroller før
+        henting hoppes over.
+      - Teksten som ble kjørt, lagres som utkast for tabellen
+        (`_apiEditDraft`, på modulnivå, siden det skal overleve visningen).
+        «Rediger» tilbyr utkastet igjen, også etter at SSB har avvist
+        spørringen. «Avbryt» og Escape forkaster det og gir fokus tilbake til
+        «Rediger».
+      - `restoreSelections()` utvider en enslig `from(X)` til X og alle senere
+        perioder (`expandFromShortcut()`, det omvendte av `getTimeShortcut()`).
+        Ellers ville Tid-kortet vært tomt etter «Tilbake til variabelvalg» for
+        det vanligste tidsvalget. Andre uttrykk (`range`, `bottom`, `to`,
+        jokertegn, `top(n, offset)`) gir fortsatt et tomt kort, men riktig
+        tabell.
+      - 5 nye tekstnøkler i nb, en og sv. `help.advanced.body`,
+        `BRUKERVEILEDNING.md` §9 og CHANGELOG nevner «Rediger».
+    - Verifisert, steg 2:
+      - `test.html`: 445/445. Det er 35 nye sjekker: de 5 nøklene i tre språk,
+        7 for `expandFromShortcut` og 13 for editoren. Editoren testes med
+        byggerens elementer i DOM-en og `openApiQuery` stubbet: fylling, melding,
+        Ctrl+Enter, utkastet etter ny visning, Escape og POST-modus. Tre feil lagt
+        inn med vilje ga FAIL: utkastet lagres ikke, «Avbryt» beholder det og
+        Ctrl+Enter virker ikke.
+      - Live med `~/sp_test/live-tests/pasteurl.mjs` (ny, i `run-all.sh`):
+        18/18 på tabell 07459, 13 forespørsler til SSB og ingen konsollfeil.
+        - GET med `from(2024)` og `105+` gir 2024–2026 og 105+, og «Tilbake» viser
+          de tre årene og 105+ valgt igjen.
+        - `[range(2025,2026)]` gir to år.
+        - En POST-body med `agg_KommFylker` gir kodelistens regioner.
+        - Uten `ContentsCode` vises en feil i visningen, og utkastet kommer
+          tilbake etter «Tilbake».
+        - Søppeltekst gir meldingen, uten navigering og uten kall.
+    - **SSBs svar i feilmeldingen** (vedlikeholderens valg 2 av 3, 2026-11-22).
+      Planen antok at SSBs egen melding ble vist ved en avvist spørring. Det
+      ble den ikke, verken her eller i 1.4.5. Visningen viste bare
+      `error.fetchData` («Kunne ikke hente data fra API …»). SSBs tekst lå i
+      `error.message`, og «Se tekniske detaljer» logger den bare til konsollen,
+      og bare med `debug`. SSB svarer kort og uten variabelnavn: «Missing
+      selection for mandantory variable» (SSBs skrivemåte) og «Non-existent
+      value». De andre valgene var å la det være, eller å vise teksten bare
+      for spørringer fra «Rediger».
+      - `_buildApiError` legger `detail` eller `title` fra svaret i
+        `error.sourceMessage`. `safeApiCall` setter `tpl('error.sourceSays',
+        AppConfig.source.name, …)` etter sin egen melding, i banneret og i
+        visningen: «… SSB svarte: «Non-existent value»». En oversatt
+        `userMessage` (tabell som ikke finnes) står alene, og 429 og svar uten
+        body har ingen `sourceMessage`.
+      - Det gjelder alle fem kallene gjennom `safeApiCall`: data, metadata og
+        kodelister, ikke bare data. Avgrensning til data ville krevd et eget
+        valg i `safeApiCall`, og teksten hjelper også der.
+      - `tpl()` setter nå inn argumentene med en erstatningsfunksjon. Med en
+        streng ble `$&` og `$'` i et argument lest som mønstre, og nå kan
+        argumentet være SSBs tekst. Ingen eksisterende tekst påvirkes.
+      - Ny nøkkel `error.sourceSays` i nb, en og sv. CHANGELOG under «Endret».
+      - Verifisert: 456/456 (11 nye sjekker: nøkkelen i tre språk,
+        `sourceMessage` i `_buildApiError`, `tpl` med `$&`, og meldingen fra
+        `safeApiCall` i banneret og i visningen). Tilbakestilt `tpl` og
+        `safeApiCall` uten kildens tekst ga hver den ventede FAIL. Live med
+        `pasteurl.mjs`: 18/18. Visningen viser «Kunne ikke hente data fra API.
+        Prøv igjen eller endre variabelvalget. SSB svarte: «Missing selection
+        for mandantory variable»». 12 forespørsler og ingen konsollfeil.
+    - **Opprydding med `/simplify`** (vedlikeholderen ba om det, 2026-11-22). Fire
+      lesende gjennomganger (gjenbruk, forenkling, effektivitet, plassering) av
+      steg 1 og 2. Rettet:
+      - `parseApiQuery` slår sammen gjentatte dimensjoner ett sted. De to
+        parserne gir bare `[dimensjon, koder, kodeliste]`.
+      - GET-parseren bruker `URLSearchParams` i stedet for egen splitting og
+        `_decodePercentLenient`. Ett regex leser både `valueCodes[…]` og
+        `codelist[…]`, og tabellnummeret sjekkes i rute-regexet
+        (`_API_TABLE_ID` er borte). Eneste forskjell: ødelagt UTF-8 som `%C3`
+        blir U+FFFD i stedet for å stå uendret. Koden finnes uansett ikke.
+      - `tpl()` erstatter alle plassholdere i én omgang. Da fylles heller ikke en
+        `{1}` i et tidligere argument inn. Ingen mal gjentar en plassholder, så
+        ingen tekst endres.
+      - `safeApiCall` setter punktum før «SSB svarte» når meldingen mangler det
+        (`error.loadMetadata` + tabellnummer, `codelist.error`).
+      - `expandFromShortcut` legger kodene på plass etter posisjon i stedet for å
+        sortere. `apiEditStartText` lar `updateQueryPreview()` bygge
+        forhåndsvisningen i stedet for en egen reserve-URL.
+      - Testene har fått `assertJson()`. ARCHITECTURE gjentar ikke lenger
+        kodekommentarene.
+    - Ikke rettet, foreslått som eget punkt: lagrede spørringer
+      (`_handleSavedQueryRoute`) og «Fyll inn standardvalg» gjør `selection` om
+      til et utvalg med sin egen løkke, uten å gjøre `['*']` og `['top(N)']` om
+      slik parseren gjør. `restoreSelections()` kjenner bare `'*'` og
+      `'top(N)'`, så et slikt kort kan stå tomt etter «Tilbake til
+      variabelvalg». Ikke sjekket mot SSB. Rettingen hører hjemme i
+      `restoreSelections()`, som da godtar begge formene, men den endrer
+      oppførselen også for de to andre veiene.
+      - Verifisert: 459/459 (3 nye: `tpl` med `{1}` og uten argument, og punktum
+        før kildens tekst). `pasteurl.mjs` på nytt: 18/18, 12 forespørsler.
 
 `test.html`: 204/204 etter steg 8, 216 etter steg 9, 254 etter steg 10, 267 etter
 steg 11, 276 etter steg 14 og 15, 285 etter steg 16, 291 etter steg 17, 295/295
 etter steg 18, 297/297 etter steg 19, 306/306 etter steg 21, 310/310 etter
 steg 22, 326/326 etter steg 23, 329/329 med én teller for alle faner, 331/331
 med margin og 343/343 etter steg 24 og 25, også i git-repoet (steg 26),
-355/355 etter steg 28 og 363/363 etter steg 29.
+355/355 etter steg 28, 363/363 etter steg 29, og 410/410, 445/445, 456/456 og
+459/459 etter steg 1 og 2 av punkt 30, SSBs svar i feilmeldingen og oppryddingen.
 
 **Sammenligning med 1.4.5.** CHANGELOG bygger på:
 - norske tekstnøkler i 1.4.5 og `sp.1.6` (76 nye, 1 fjernet);

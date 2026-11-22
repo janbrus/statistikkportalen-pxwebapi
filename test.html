@@ -74,6 +74,11 @@
       _out.appendChild(el);
     }
 
+    // assertEqual on the JSON of both sides, for objects and lists
+    function assertJson(description, actual, expected) {
+      assertEqual(description, JSON.stringify(actual), JSON.stringify(expected));
+    }
+
     function assertEqual(description, actual, expected) {
       const pass = actual === expected;
       const el = document.createElement('div');
@@ -189,7 +194,8 @@
       'table.preliminary', 'table.nil', 'table.notYetAvailable',
       'metadata.title', 'metadata.source', 'metadata.updated', 'metadata.status', 'metadata.official',
       'metadata.about', 'metadata.notes', 'metadata.contact', 'metadata.phone', 'metadata.definitions',
-      'error.tableNotFound', 'error.tableNotFoundTitle', 'error.tableChangesLink'];
+      'error.tableNotFound', 'error.tableNotFoundTitle', 'error.tableChangesLink',
+      'api.edit', 'api.editLabel', 'api.editRun', 'api.editCancel', 'api.editInvalid', 'error.sourceSays'];
     _newKeys.forEach(key => ['nb', 'en', 'sv'].forEach(lang =>
       assert(lang + ' ' + key, typeof translations[lang][key] === 'string' && translations[lang][key] !== '')));
 
@@ -297,6 +303,14 @@
     const _e400 = api._buildApiError(400, 'Bad Request', { title: 'Bad Request', detail: 'Value XXXX not found' });
     assertEqual('other errors: detail first', _e400.message, 'Value XXXX not found');
     assert('other errors: no userMessage, no helpUrl', !_e400.userMessage && !_e400.helpUrl && !_e400.tableNotFound);
+    assertEqual('the source\'s own text is kept as sourceMessage', _e400.sourceMessage, 'Value XXXX not found');
+    assertEqual('… or its title when there is no detail (SSB, 2026-11-22)',
+      api._buildApiError(400, 'Bad Request', { title: 'Non-existent value', status: 400 }).sourceMessage, 'Non-existent value');
+    assert('no body → no sourceMessage', !('sourceMessage' in api._buildApiError(500, 'Internal Server Error', null)) &&
+      !('sourceMessage' in api._buildApiError(429, 'Too Many Requests', null)));
+    assertEqual('tpl() puts "$&" in as text', tpl('error.sourceSays', 'SSB', 'a $& b'), 'SSB svarte: «a $& b»');
+    assertEqual('… and a "{1}" in an earlier arg isn\'t filled in', tpl('error.sourceSays', '{1}', 'x'), '{1} svarte: «x»');
+    assertEqual('… and a placeholder without an arg stays', tpl('error.sourceSays', 'SSB'), 'SSB svarte: «{1}»');
     assertEqual('429 → rate-limit message', api._buildApiError(429, 'Too Many Requests', null).message, t('error.rateLimit'));
     assertEqual('403 without a body → cell-limit message', api._buildApiError(403, 'Forbidden', null).message, t('error.cellLimit'));
     assertEqual('500 without a body → HTTP status', api._buildApiError(500, 'Internal Server Error', null).message, 'HTTP 500: Internal Server Error');
@@ -394,6 +408,122 @@
     // SSB-specific /statbank/sq/ path IS matched
     assertEqual('/statbank/sq/ matched',
       detectSavedQueryId('https://www.ssb.no/statbank/table/14704?sq=30121434'), '30121434');
+
+    suite('parseApiQuery — the API builder\'s GET URL reads back into the selection');
+    // A throw on odd input is a FAIL of its own, not a stopped run (a search field would throw too)
+    const _pqParse = (...args) => {
+      try {
+        return parseApiQuery(...args);
+      } catch (e) {
+        assert('parseApiQuery threw on ' + escapeHtml(JSON.stringify(args[0])) + ': ' + escapeHtml(String(e)), false);
+        return null;
+      }
+    };
+    const _pqSelOf = q => q && q.variableSelection;
+    const _pqData = AppConfig.apiBaseUrl + '/tables/07459/data';
+    // Built as updateQueryPreview() builds it: the time shortcut from(), top(N),
+    // a code with "+", "*", and a codelist with outputValues
+    const _pqParams = new URLSearchParams({ lang: 'no', outputFormat: 'csv', outputFormatParams: 'UseTexts,SeparatorSemicolon' });
+    _pqParams.append('valueCodes[Region]', 'K-3101,K-3103');
+    _pqParams.append('valueCodes[Kjonn]', '*');
+    _pqParams.append('valueCodes[Alder]', '104,105+');
+    _pqParams.append('valueCodes[ContentsCode]', 'Personer1');
+    _pqParams.append('valueCodes[Tid]', 'from(2024)');
+    _pqParams.append('valueCodes[Kvartal]', 'top(3)');
+    _pqParams.append('codelist[Region]', 'agg_KommSummer');
+    _pqParams.append('outputValues[Region]', 'aggregated');
+    const _pqEncoded = _pqData + '?' + _pqParams.toString();
+    const _pqPlain = decodeURIComponent(_pqEncoded);   // the builder's plain-text display
+    const _pqSel = { Region: ['K-3101', 'K-3103'], Kjonn: '*', Alder: ['104', '105+'],
+      ContentsCode: ['Personer1'], Tid: ['from(2024)'], Kvartal: 'top(3)' };
+    const _pqCl = { Region: 'agg_KommSummer' };
+    assert('(the encoded form has %5B, and %2B for the "+")', _pqEncoded.includes('%5B') && _pqEncoded.includes('105%2B'));
+    let _pq = _pqParse(_pqEncoded);
+    assertEqual('encoded: the table number', _pq && _pq.tableId, '07459');
+    assertJson('encoded: the selection', _pqSelOf(_pq), _pqSel);
+    assertJson('encoded: the codelist', _pq && _pq.activeCodelistIds, _pqCl);
+    _pq = _pqParse(_pqPlain);
+    assertJson('plain text: the same selection', _pqSelOf(_pq), _pqSel);
+    assertJson('plain text: the same codelist', _pq && _pq.activeCodelistIds, _pqCl);
+    const _pqSpace = new URLSearchParams();
+    _pqSpace.append('valueCodes[Næring]', 'A B');
+    const _pqSpaceUrl = _pqData + '?' + _pqSpace.toString();
+    assertJson('encoded: "+" is a space, and %C3%A6 is æ',
+      _pqSelOf(_pqParse(_pqSpaceUrl)), { 'Næring': ['A B'] });
+    assertJson('plain text: "+" stays a plus, so a space is lost there (known)',
+      _pqSelOf(_pqParse(decodeURIComponent(_pqSpaceUrl))), { 'Næring': ['A+B'] });
+    assertEqual('a GET URL names its own table, whatever tableId says',
+      (_pqParse(_pqEncoded, '99999') || {}).tableId, '07459');
+    _pq = _pqParse('  ' + _pqData.replace('https:', 'http:') + '/?valueCodes[Tid]=2020  ');
+    assertJson('http, a "/" after data and spaces around are fine', _pqSelOf(_pq), { Tid: ['2020'] });
+    _pq = _pqParse(_pqData);
+    assert('no query string → the table with an empty selection',
+      _pq && _pq.tableId === '07459' && JSON.stringify(_pq.variableSelection) === '{}');
+
+    suite('parseApiQuery — value expressions');
+    const _pqTid = v => {
+      const q = _pqParse(_pqData + '?valueCodes[Tid]=' + v);
+      return q ? q.variableSelection.Tid : null;
+    };
+    assertJson('[range(a,b)] loses its brackets', _pqTid('[range(2024M01,2024M03)]'), ['range(2024M01,2024M03)']);
+    assertJson('a bare range(a,b) is one code too', _pqTid('range(2024M01,2024M03)'), ['range(2024M01,2024M03)']);
+    assertJson('2015,top(2) → two codes', _pqTid('2015,top(2)'), ['2015', 'top(2)']);
+    assertJson('TOP(3) → top(3)', _pqTid('TOP(3)'), 'top(3)');
+    assertJson('top(3,1) stays a list (the top mode has no offset)', _pqTid('top(3,1)'), ['top(3,1)']);
+    assertJson('a comma inside [...] is part of the code', _pqTid('[1,5],2'), ['1,5', '2']);
+    assertJson('spaces after a comma are dropped', _pqTid('2020, 2021'), ['2020', '2021']);
+    _pq = _pqParse(_pqData + '?valueCodes[Tid]=2020&valueCodes[Tid]=2021&valueCodes[Kjonn]=');
+    assertJson('a repeated valueCodes adds to it, an empty one is left out',
+      _pqSelOf(_pq), { Tid: ['2020', '2021'] });
+    _pq = _pqParse(_pqData + '?valueCodes[Tid]=2020,\n2021&valueCodes[Region]=100%,%ZZ,%C3');
+    assertJson('line breaks are dropped, a "%" that isn\'t %XX stays, broken UTF-8 → U+FFFD (URLSearchParams)',
+      _pqSelOf(_pq), { Tid: ['2020', '2021'], Region: ['100%', '%ZZ', '\uFFFD'] });
+    _pq = _pqParse(AppConfig.apiBaseUrl.replace('/api/', '/api\n/') + '/tables/07459/data?valueCodes[Tid]=2020');
+    assertEqual('… also inside the path', _pq && _pq.tableId, '07459');
+
+    suite('parseApiQuery — not a data query');
+    assertEqual('another host', _pqParse('https://example.com/api/pxwebapi/v2/tables/07459/data?valueCodes[Tid]=2020'), null);
+    assertEqual('…/v2-beta', _pqParse(AppConfig.apiBaseUrl + '-beta/tables/07459/data?valueCodes[Tid]=2020'), null);
+    assertEqual('without a scheme', _pqParse(_pqData.replace(/^https:\/\//, '') + '?valueCodes[Tid]=2020'), null);
+    assertEqual('/metadata', _pqParse(AppConfig.apiBaseUrl + '/tables/07459/metadata?lang=no'), null);
+    assertEqual('a table number with other characters', _pqParse(AppConfig.apiBaseUrl + '/tables/07459<b>/data'), null);
+    assertEqual('free text', _pqParse('befolkning i Oslo'), null);
+    assertEqual('empty text', _pqParse('   '), null);
+    assertEqual('not a string', _pqParse(null), null);
+    assertEqual('a POST body without tableId', _pqParse('{"selection": []}'), null);
+    assertEqual('JSON that doesn\'t parse', _pqParse('{"selection": [', '07459'), null);
+    assertEqual('a body without selection', _pqParse('{"query": []}', '07459'), null);
+    assertEqual('valueCodes not a list',
+      _pqParse('{"selection": [{"variableCode": "Tid", "valueCodes": "2020"}]}', '07459'), null);
+    assertEqual('a code that isn\'t a string',
+      _pqParse('{"selection": [{"variableCode": "Tid", "valueCodes": [2020]}]}', '07459'), null);
+
+    suite('parseApiQuery — a POST body');
+    _pq = _pqParse(JSON.stringify({ selection: [
+      { variableCode: 'Region', valueCodes: ['[K-3101]', 'K-3103'], codelist: 'agg_KommSummer', outputValues: 'aggregated' },
+      { variableCode: 'Tid', valueCodes: ['TOP(2)'] },
+      { variableCode: 'Kjonn', valueCodes: ['*'] }
+    ], placement: { stub: ['Region'] } }, null, 2), '07459');
+    assertEqual('takes tableId', _pq && _pq.tableId, '07459');
+    assertJson('brackets stay part of the code; * and top() as the view writes them',
+      _pqSelOf(_pq), { Region: ['[K-3101]', 'K-3103'], Tid: 'top(2)', Kjonn: '*' });
+    assertJson('the codelist', _pq && _pq.activeCodelistIds, { Region: 'agg_KommSummer' });
+    _pq = _pqParse(JSON.stringify(api.buildPostBody(_pqSel, { codelistIds: _pqCl })), '07459');
+    assertJson('buildPostBody()\'s own body reads back to the same selection',
+      _pqSelOf(_pq), _pqSel);
+
+    suite('apiQueryRoute — the route that runs a parsed query');
+    const _pqRouteOf = text => { const q = _pqParse(text); return q ? apiQueryRoute(q) : { route: null, params: {} }; };
+    let _pqRoute = _pqRouteOf(_pqEncoded);
+    assertEqual('a selection → table/{id}', _pqRoute.route, 'table/07459');
+    assertJson('… with the selection in v', URLRouter.decode(_pqRoute.params.v), _pqSel);
+    assertJson('… and the codelist in c', URLRouter.decode(_pqRoute.params.c), _pqCl);
+    _pqRoute = _pqRouteOf(_pqData + '?lang=no&codelist[Region]=vs_Fylker');
+    assertEqual('no selection → variables/{id}', _pqRoute.route, 'variables/07459');
+    assert('… without v, with c', _pqRoute.params.v === null &&
+      JSON.stringify(URLRouter.decode(_pqRoute.params.c)) === JSON.stringify({ Region: 'vs_Fylker' }));
+    const _pqHash = location.hash;
+    assert('openPastedQuery: free text is left to the search', openPastedQuery('befolkning') === false && location.hash === _pqHash);
 
     suite('formatNumber — Norwegian formatting');
     assertEqual('null → dash', formatNumber(null), '-');
@@ -498,6 +628,89 @@
     assertEqual('newest follows the index, not key order', getTimeShortcut('Tid', ['2020M02']), 'top(1)');
     VarSelect.tableMetadata = null;
     assertEqual('no metadata → no shortcut', getTimeShortcut('Tid', ['2023']), null);
+
+    suite('expandFromShortcut — a lone from(X) back to the periods');
+    VarSelect.tableMetadata = { dimension: { Tid: { category: { index: { '2022': 2, '2020': 0, '2023': 3, '2021': 1 } } } } };
+    assertEqual('from(2021) → 2021 and later, in index order',
+      expandFromShortcut('Tid', ['from(2021)']).join(), '2021,2022,2023');
+    assertEqual('… which getTimeShortcut turns back into from(2021)',
+      getTimeShortcut('Tid', expandFromShortcut('Tid', ['from(2021)'])), 'from(2021)');
+    assertEqual('FROM( 2021 ) too', expandFromShortcut('Tid', ['FROM( 2021 )']).join(), '2021,2022,2023');
+    assertEqual('a period not in the table → unchanged', expandFromShortcut('Tid', ['from(1999)']).join(), 'from(1999)');
+    assertEqual('from() with other codes → unchanged', expandFromShortcut('Tid', ['from(2021)', '2020']).join(), 'from(2021),2020');
+    assertEqual('plain codes → unchanged', expandFromShortcut('Tid', ['2021']).join(), '2021');
+    VarSelect.tableMetadata = null;
+    assertEqual('no metadata → unchanged', expandFromShortcut('Tid', ['from(2021)']).join(), 'from(2021)');
+
+    suite('API builder — «Rediger» runs an edited query in the app');
+    assert('api.editInvalid has {0} for the base URL in nb, en and sv',
+      ['nb', 'en', 'sv'].every(lang => translations[lang]['api.editInvalid'].includes('{0}')));
+    // The builder's elements, wired as in the variable view; openApiQuery is
+    // stubbed, so nothing navigates and no API is called
+    const _edBox = document.createElement('div');
+    const _edMarkup = () => {
+      _edBox.innerHTML = `
+        <select id="api-method-toggle"><option value="get" selected>GET</option><option value="post">POST</option></select>
+        <code id="query-preview-url" data-raw-url="${escapeHtml(_pqEncoded)}">${escapeHtml(_pqPlain)}</code>
+        <code id="api-post-body-preview">{"selection": []}</code>
+        <button id="api-edit-btn" aria-expanded="false">Rediger</button>
+        <div id="api-edit-section" style="display: none;">
+          <textarea id="api-edit-input"></textarea>
+          <div id="api-edit-error"></div>
+          <button id="api-edit-run">Kjør</button><button id="api-edit-cancel">Avbryt</button>
+        </div>`;
+      setupApiEditEvents();
+    };
+    const _edOrigOpen = openApiQuery;
+    const _edOrigTable = AppState.selectedTable;
+    const _edOpened = [];
+    openApiQuery = q => { _edOpened.push(q); };
+    const _ed = id => document.getElementById(id);
+    const _edKey = init => _ed('api-edit-input').dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, ...init }));
+    document.body.appendChild(_edBox);
+    try {
+      AppState.selectedTable = { id: '07459' };
+      _apiEditDraft = null;
+      _edMarkup();
+      _ed('api-edit-btn').click();
+      assert('«Rediger» opens the field', _ed('api-edit-section').style.display === '' &&
+        _ed('api-edit-btn').getAttribute('aria-expanded') === 'true');
+      assertEqual('… filled with the URL as shown (plain text)', _ed('api-edit-input').value, _pqPlain);
+      assert('… and focused', document.activeElement === _ed('api-edit-input'));
+      _ed('api-edit-input').value = 'befolkning';
+      _ed('api-edit-run').click();
+      assertEqual('text that isn\'t a query → a message with the base URL',
+        _ed('api-edit-error').textContent, tpl('api.editInvalid', AppConfig.apiBaseUrl));
+      assertEqual('… and nothing is opened', _edOpened.length, 0);
+      _ed('api-edit-input').dispatchEvent(new Event('input'));
+      assertEqual('typing clears the message', _ed('api-edit-error').textContent, '');
+      const _edText = _pqPlain.replace('from(2024)', '[range(2022,2023)]');
+      _ed('api-edit-input').value = _edText;
+      _edKey({ key: 'Enter', ctrlKey: true });
+      assertJson('Ctrl+Enter runs the query', _edOpened.length === 1 && _edOpened[0].variableSelection.Tid,
+        ['range(2022,2023)']);
+      _edMarkup();   // back in the variable view: a new render
+      _ed('api-edit-btn').click();
+      assertEqual('«Rediger» offers the query that ran, not the cards', _ed('api-edit-input').value, _edText);
+      _edKey({ key: 'Escape' });
+      assert('Escape closes the field and gives focus back to «Rediger»', _ed('api-edit-section').style.display === 'none' &&
+        _ed('api-edit-btn').getAttribute('aria-expanded') === 'false' && document.activeElement === _ed('api-edit-btn'));
+      _ed('api-edit-btn').click();
+      assertEqual('… and drops the draft', _ed('api-edit-input').value, _pqPlain);
+      _ed('api-edit-cancel').click();
+      _ed('api-method-toggle').value = 'post';
+      _ed('api-edit-btn').click();
+      assertEqual('in POST mode the field starts from the body', _ed('api-edit-input').value, '{"selection": []}');
+      _ed('api-edit-input').value = JSON.stringify({ selection: [{ variableCode: 'Tid', valueCodes: ['top(2)'] }] });
+      _ed('api-edit-run').click();
+      assert('… and a body runs for this table', _edOpened.length === 2 && _edOpened[1].tableId === '07459' &&
+        _edOpened[1].variableSelection.Tid === 'top(2)');
+    } finally {
+      openApiQuery = _edOrigOpen;
+      AppState.selectedTable = _edOrigTable;
+      _apiEditDraft = null;
+      _edBox.remove();
+    }
 
     suite('table-metadata — link.related helpers');
     // Trimmed from the live /tables/10484/metadata response (2026-11-08): a cross-listed
@@ -828,6 +1041,30 @@
         showError = _origShowError;
       }
 
+      suite('safeApiCall — the source\'s own text follows the message');
+      const _scBanner = [];
+      const _scView = document.createElement('div');
+      document.body.appendChild(_scView);
+      showError = (message) => { _scBanner.push(message); };
+      try {
+        await safeApiCall(() => Promise.reject(api._buildApiError(400, 'Bad Request', { title: 'Non-existent value', status: 400 })),
+          t('error.fetchData'), _scView);
+        const _scWant = t('error.fetchData') + ' SSB svarte: «Non-existent value»';
+        assertEqual('in the banner', _scBanner[0], _scWant);
+        assertEqual('… and in the view', _scView.textContent, _scWant);
+        await safeApiCall(() => Promise.reject(api._buildApiError(400, 'Bad Request', { title: 'Non-existent table' })), 'x');
+        assertEqual('a translated userMessage stands alone', _scBanner[1], t('error.tableNotFound'));
+        await safeApiCall(() => Promise.reject(api._buildApiError(500, 'Internal Server Error', null)), 'x');
+        assertEqual('nothing from the source → the message alone', _scBanner[2], 'x');
+        await safeApiCall(() => Promise.reject(api._buildApiError(400, 'Bad Request', { title: 'Non-existent codelist' })),
+          t('codelist.error'));
+        assertEqual('a message without a full stop gets one first', _scBanner[3],
+          t('codelist.error') + '. SSB svarte: «Non-existent codelist»');
+      } finally {
+        showError = _origShowError;
+        _scView.remove();
+      }
+
       suite('URLRouter — a route that redirects also renders where it goes');
       // navigateTo() only updates history. These redirects used to leave the page
       // unrendered (a fresh load of #table/09772 stayed on «Initialiserer...»).
@@ -857,6 +1094,16 @@
         _r = await _routeTo('#table/');
         assertEqual('#table/ without a table number → #home', _r.hash, '#home');
         assertEqual('… and the front page is rendered', _r.rendered, 'home');
+
+        suite('openPastedQuery — a pasted data URL opens the table');
+        _rendered.length = 0;
+        const _pqOpened = openPastedQuery(_pqEncoded);
+        await Promise.resolve();
+        assert('returns true', _pqOpened === true);
+        assertEqual('#table/{id} with v and c', location.hash,
+          '#table/07459?v=' + URLRouter.encode(_pqSel) + '&c=' + URLRouter.encode(_pqCl));
+        assertEqual('… and the table view is rendered with that selection',
+          _rendered.join() + ' ' + JSON.stringify(AppState.variableSelection), 'table ' + JSON.stringify(_pqSel));
       } finally {
         renderCurrentView = _origRender;
         history.replaceState(null, '', location.pathname + location.search + _origHash);

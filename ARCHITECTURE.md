@@ -213,7 +213,8 @@ BrowserState.selectTable("09772")
                     //                   ones), or explicit codes when a codelist is active
                     //   "Opphev alle" → deselect all (specific mode, empty selection)
                     //   "Siste N"     → top(N) mode (time dimensions only)
-              → restoreSelections()                // From AppState.variableSelection (URL state)
+              → restoreSelections()                // From AppState.variableSelection (URL state);
+                                                   // a lone from(X) via expandFromShortcut()
               → autoSelectSingleValueDimensions()  // Mandatory dimensions with only one value
               → updateSelectionStatus()            // Validate, show cell count, enable/disable "Hent data"
 ```
@@ -244,6 +245,19 @@ setupApiBuilderEvents()          // Wires the panel's controls
        its radio group the same way
   → "Kopier URL" / "Åpne i nettleser" → use dataset.rawUrl (encoded)
   → "Kopier body" button → copies JSON POST body to clipboard
+  → setupApiEditEvents()         // "Rediger": edit the query and run it in the app
+     → "Rediger" opens #api-edit-section under the preview, which stays as it is.
+       The textarea starts from the draft for this table, or else from what the
+       builder shows: the URL in GET mode (plain or encoded, as the checkbox says),
+       the body in POST mode
+     → "Kjør spørringen" / Ctrl+Enter → parseApiQuery(text, table id)
+        → null: tpl('api.editInvalid', apiBaseUrl) in #api-edit-error (a live
+          region, hidden by CSS when empty); nothing is opened
+        → otherwise _apiEditDraft = { tableId, text }, then openApiQuery():
+          #table/{id}?v=&c=, the same POST as "Hent data". The app's own checks
+          (required variables, cell count) are skipped: the source decides
+     → "Avbryt" / Escape → drops the draft, closes, focus back on "Rediger"
+     // Why the draft outlives the view: see _apiEditDraft
 ```
 
 ### The user clicks "Hent data"
@@ -451,6 +465,14 @@ The `v`, `c`, and `l` parameters are JSON objects encoded as URL-safe Base64:
 
 Pasted saved-query links are recognised by `detectSavedQueryId()` in `utils.js` (`/statbank/sq/{id}`, `?sq={id}`, `#sq/{id}`), called from the search inputs in `front-page.js` and `search-view.js`.
 
+**PxWebApi queries read back.** `parseApiQuery(text, tableId)` (`utils.js`) turns a data query into `{ tableId, variableSelection, activeCodelistIds }`, in the forms the variable view writes (`'*'`, `'top(N)'` or a list of codes), or returns `null`.
+- **A GET URL** must lie under `AppConfig.apiBaseUrl` plus `/` (`http` or `https`) and end in `/tables/{id}/data`, with `{id}` only `[A-Za-z0-9_-]`. Line breaks are dropped. It reads `valueCodes[Dim]` (a repeated one adds to it) and `codelist[Dim]`, and leaves out language, output format, `outputValues` and layout: the table view picks its own.
+- **A POST body** (`{ "selection": [...] }`) needs `tableId`, since it doesn't name the table. Its codes are kept as they are.
+- **`+`:** a query string with `%5B` is the builder's encoded URL, and there `+` is a space (`URLSearchParams`). Without it, it is the plain-text display, and `+` is a plus (`105+`). A code with a space therefore reads back right only from the encoded form. `URLSearchParams` decodes it, leniently: a `%` that isn't `%XX` stays, and broken UTF-8 becomes U+FFFD.
+- **Brackets:** a comma splits codes except inside `[...]` or `(...)`, and one `[...]` around a code is dropped. The rule comes from PxWebApi's GET binder (`QueryStringToDictionaryOfStrings.cs` in PxTools/PxWebApi), not the spec. It splits on every comma outside brackets, so a GET URL needs `[range(a,b)]`. A POST body takes `range(a,b)` as it is and reads a bracket as part of the code. A bare `range(a,b)` is accepted here too.
+
+`apiQueryRoute()` gives the route that runs a parsed query: `table/{id}` with `v` and `c`, as «Hent data» writes them, or `variables/{id}` when nothing is selected. `openApiQuery()` navigates there and renders. `openPastedQuery(text)` tries `parseApiQuery()`, then `detectSavedQueryId()`, and returns whether it opened something. The query isn't checked against the table's metadata before it is sent; a wrong one shows the source's own message through `safeApiCall()`.
+
 ## SSB API integration
 
 All API calls go through `SSBApi` (api.js) which enforces 100ms minimum spacing between requests. SSB allows 40 calls per 60 s: the `x-ratelimit-policy` response header says `40;w=60s` (2026-11-08), while SSB's user guide says 30 per minute, and the header is the current value. `/config` still has `maxCallsPerTimeWindow`/`timeWindow`, but they are `0` and no longer used (`0` doesn't mean "no limit"). The browser can't read the `x-ratelimit-*` headers (they aren't exposed through CORS), so the limit is set in `AppConfig.limits.rateLimit` (SSB `{ calls: 40, windowMs: 60000 }`). `_applyConfig()` replaces it when `/config` states one, as SCB's does (30 per 10 s).
@@ -464,7 +486,9 @@ GET  /tables/{id}/metadata?lang=no
 GET  /tables/{id}/defaultselection?lang=no   — "Fyll inn standardvalg" (replaces the current picks:
                                                VarSelect.resetSelections() + displayVariables())
 GET  /tables/{id}/data?lang=no&valueCodes[Dim]=codes[&codelist[Dim]=id][&outputFormat=...]
-                                      — Only generated for the API builder preview
+                                      — Only generated for the API builder preview. One
+                                        edited there is read back (parseApiQuery) and
+                                        runs as the POST below
 POST /tables/{id}/data?lang=no[&outputFormat=xlsx&outputFormatParams=...]
 GET  /codeLists/{id}?lang=no
 POST /savedqueries                    — Create saved query
@@ -478,16 +502,18 @@ When `BrowserState.init()` first runs, it awaits `api.getConfig()`, which fetche
 
 ### Error handling
 
-All API methods except `getConfig()`, which falls back to defaults instead, use `_handleErrorResponse()`. It reads the body and throws what the pure `_buildApiError(status, statusText, body)` returns (pure so `test.html` can check it). SSB returns RFC 7807 Problem Detail JSON with a `detail` field containing specific messages (e.g. "Value, xxx is not a valid value code for variable yyy"). Status codes:
+All API methods except `getConfig()`, which falls back to defaults instead, use `_handleErrorResponse()`. It reads the body and throws what the pure `_buildApiError(status, statusText, body)` returns (pure so `test.html` can check it). SSB returns RFC 7807 Problem Detail JSON, often with only a short `title` (2026-11-22: "Non-existent value", "Missing selection for mandantory variable", SSB's spelling, without the variable's name). The body's `detail`, or else its `title`, becomes the error's `message` and `sourceMessage`, which `safeApiCall()` adds to its own message as `tpl('error.sourceSays', source.name, …)` («SSB svarte: «Non-existent value»»), after a full stop if the message has none. Status codes:
 
-- **429** — Rate limited. Always shows `t('error.rateLimit')`.
-- **403** — Forbidden (query exceeds cell limit). Shows the API's `detail` or `title` if present, otherwise `t('error.cellLimit')`.
-- **Anything else** (e.g. 400 for invalid value codes) — Shows the API's `detail` or `title` if present, otherwise `HTTP {status}: {statusText}`.
+- **429** — Rate limited. The message is `t('error.rateLimit')`, with no `sourceMessage`.
+- **403** — Forbidden (query exceeds cell limit). The API's `detail` or `title` if present, otherwise `t('error.cellLimit')`.
+- **Anything else** (e.g. 400 for invalid value codes) — The API's `detail` or `title` if present, otherwise `HTTP {status}: {statusText}` (no `sourceMessage`).
 - **Title `"Non-existent table"`** — 404 from `/tables/{id}` and `/metadata`, 400 from `/data`, and the same for a removed table and a number that never existed (11038, 99999). The error also gets `tableNotFound: true`, `userMessage: t('error.tableNotFound')` and `helpUrl`, the source's page of changed and removed tables (`localized(AppConfig.source.tableChangesUrl)`, `null` when not configured).
 
 ```
 safeApiCall(fn, errorMessage, viewContainer?)          // utils.js
-  → catch: message = error.userMessage || errorMessage
+  → catch: message = error.userMessage, or else errorMessage followed by
+           tpl('error.sourceSays', AppConfig.source.name, error.sourceMessage) when
+           the source said something
      → showError(message, error)           // banner, auto-hides; link to error.helpUrl if set
      → showViewError(viewContainer, message, error)
                                            // the same message (and link) in place of the view's

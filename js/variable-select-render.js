@@ -342,8 +342,10 @@ async function restoreSelections() {
       VarSelect.setListState(dimCode, []);
       updateModeVisuals(card);
     } else if (Array.isArray(dimSelection) && dimSelection.length > 0) {
-      // Specific mode: mark matching items as selected
-      const selectedCodes = new Set(dimSelection);
+      // Specific mode: mark matching items as selected. A lone from(X), from an
+      // edited query, is X and every later period. Other expressions match no
+      // item and leave the card empty; the query itself still ran as written.
+      const selectedCodes = new Set(expandFromShortcut(dimCode, dimSelection));
       container.querySelectorAll('.value-list-item').forEach(item => {
         if (selectedCodes.has(item.dataset.code)) item.classList.add('selected');
       });

@@ -173,6 +173,8 @@ async function renderVariableSelection(container) {
                 <label class="api-builder-checkbox-label" title="${t('api.decodedUrlTooltip')}"><input type="checkbox" id="api-decode-url-cb" checked> ${t('api.showPlaintext')}</label>
                 <button class="btn-secondary btn-sm" id="api-copy-url-btn" title="${t('api.copyUrl')}">${t('api.copyUrl')}</button>
                 <button class="btn-secondary btn-sm" id="api-open-btn" title="${t('api.openNewTab')}">${t('api.openBrowser')}</button>
+                <button class="btn-secondary btn-sm" id="api-edit-btn" title="${t('api.editLabel')}"
+                        aria-expanded="false" aria-controls="api-edit-section">${t('api.edit')}</button>
               </div>
             </div>
             <code class="query-preview-url" id="query-preview-url">
@@ -189,6 +191,20 @@ async function renderVariableSelection(container) {
               </div>
             </div>
             <code class="query-preview-url" id="api-post-body-preview" style="white-space: pre;"></code>
+          </div>
+
+          <div class="api-builder-section" id="api-edit-section" style="display: none;">
+            <div class="api-builder-section-header">
+              <label class="api-builder-section-title" for="api-edit-input">${t('api.editLabel')}</label>
+            </div>
+            <textarea class="query-preview-url api-edit-input" id="api-edit-input" rows="6"
+                      spellcheck="false" autocapitalize="off" autocomplete="off"></textarea>
+            <div class="api-url-warning api-edit-error" id="api-edit-error" role="status" aria-live="polite"></div>
+            <div class="api-builder-actions api-edit-actions">
+              <button class="btn-primary btn-sm" id="api-edit-run" title="Ctrl+Enter"
+                      aria-keyshortcuts="Control+Enter Meta+Enter">${t('api.editRun')}</button>
+              <button class="btn-secondary btn-sm" id="api-edit-cancel">${t('api.editCancel')}</button>
+            </div>
           </div>
 
           <div class="api-builder-section">

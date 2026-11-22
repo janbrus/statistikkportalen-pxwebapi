@@ -330,6 +330,22 @@ nyeste perioden, skriver URL-en `from(startdato)` eller `top(n)`. Da blir lenken
 og henter alltid ferske tall. Ellers listes periodene enkeltvis, så lenken henter akkurat
 dem. Blir en GET-URL for lang, sier portalen fra og foreslår POST.
 
+**Rediger og kjør spørringen.** Med **«Rediger»** ved Data-URL kan du endre spørringen
+som tekst og kjøre den i portalen med **«Kjør spørringen»** (eller Ctrl+Enter). Feltet
+starter med URL-en eller POST-bodyen slik den vises, og du kan også lime inn en annen
+GET-URL mot SSBs API eller en POST-body i JSON. Du får tabellen slik «Hent data» ville
+gitt den, og kan rotere, lage diagram og laste ned som vanlig.
+
+- Uttrykk som `[range(2020,2023)]` virker. Variabelkortene viser vanlige koder, `*`,
+  `top(n)` og `from()`. Andre uttrykk vises ikke, så et slikt kort står tomt etter
+  «Tilbake til variabelvalg».
+- «Rediger» husker teksten du kjørte, også når SSB avviste spørringen, så du kan rette
+  den. «Avbryt» forkaster den.
+- Portalen sjekker ikke spørringen på forhånd. Er den feil, får du en feilmelding med
+  SSBs eget svar, for eksempel «SSB svarte: «Non-existent value»».
+- I klartekst er `+` alltid et plusstegn (`105+`). En kode med mellomrom må derfor
+  komme fra den kodede URL-en, der mellomrom er `+`.
+
 ### Naturlig språk i stedet?
 
 Vil du heller *spørre* med vanlig språk, som «hvor mange bor i Oslo siste 10 år?»

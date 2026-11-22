@@ -947,6 +947,29 @@ body[data-view="variables"] .table-not-found .view-header-buttons,
   margin-top: var(--spacing-xs);
 }
 
+/* The query editor: a textarea in the preview's colours (.query-preview-url) */
+.api-edit-input {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 8em;
+  resize: vertical;
+  border: none;
+}
+
+.api-edit-input:focus-visible {
+  outline: 2px solid var(--color-secondary);
+  outline-offset: 2px;
+}
+
+/* A live region, so it stays in the page; empty when there is no message */
+.api-edit-error:empty {
+  display: none;
+}
+
+.api-edit-actions {
+  margin-top: var(--spacing-sm);
+}
+
 .api-copy-toast {
   font-size: var(--font-size-sm);
   color: var(--color-success);
