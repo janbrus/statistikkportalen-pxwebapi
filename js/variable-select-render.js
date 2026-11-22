@@ -321,7 +321,7 @@ async function restoreSelections() {
     const container = card.querySelector('.value-list-container');
     if (!container) return;
 
-    const dimSelection = savedSelection[dimCode];
+    const dimSelection = cardSelection(savedSelection[dimCode]);
 
     if (!dimSelection) {
       // No saved selection for this dimension (was eliminated or not selected)
@@ -342,8 +342,10 @@ async function restoreSelections() {
       VarSelect.setListState(dimCode, []);
       updateModeVisuals(card);
     } else if (Array.isArray(dimSelection) && dimSelection.length > 0) {
-      // Specific mode: mark matching items as selected
-      const selectedCodes = new Set(dimSelection);
+      // Specific mode: mark matching items as selected. A lone from(X), from an
+      // edited query, is X and every later period. Other expressions match no
+      // item and leave the card empty; the query itself still ran as written.
+      const selectedCodes = new Set(expandFromShortcut(dimCode, dimSelection));
       container.querySelectorAll('.value-list-item').forEach(item => {
         if (selectedCodes.has(item.dataset.code)) item.classList.add('selected');
       });
@@ -359,6 +361,24 @@ async function restoreSelections() {
 
     updateValueCounter(card);
   });
+}
+
+/**
+ * A stored selection in the forms the cards use: '*', 'top(N)' or a list of
+ * codes. A saved query, a pasted query and the default selection come as lists
+ * (["top(3)"]), so a lone "*" is star mode and a lone top(N) is top mode, in any
+ * case (the source takes TOP(3) too). Other lists stay lists, top(N, offset)
+ * too, since the top mode has no offset.
+ *
+ * @param {string|string[]|undefined} dimSelection - From AppState.variableSelection
+ * @returns {string|string[]|undefined}
+ */
+function cardSelection(dimSelection) {
+  if (!Array.isArray(dimSelection) || dimSelection.length !== 1) return dimSelection;
+  const code = dimSelection[0];
+  if (code === '*') return '*';
+  const top = /^top\(\s*(\d+)\s*\)$/i.exec(code);
+  return top ? 'top(' + top[1] + ')' : dimSelection;
 }
 
 /**

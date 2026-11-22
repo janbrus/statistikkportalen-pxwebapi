@@ -270,6 +270,9 @@ class SSBApi {
    *   /data, the same for a removed table and a number that never existed)
    *   also sets tableNotFound, a translated userMessage that safeApiCall()
    *   shows, and helpUrl, the source's page of changed and removed tables
+   * - sourceMessage: that detail or title, when the body has one. safeApiCall()
+   *   adds it to its own message when there is no userMessage (SSB answers
+   *   e.g. "Non-existent value", "Missing selection for mandantory variable")
    *
    * @param {number} status - HTTP status
    * @param {string} statusText - HTTP status text
@@ -282,6 +285,7 @@ class SSBApi {
     const detail = body?.detail || body?.title || '';
     const error = new Error(detail ||
       (status === 403 ? t('error.cellLimit') : 'HTTP ' + status + ': ' + statusText));
+    if (detail) error.sourceMessage = detail;
 
     if (body?.title === 'Non-existent table') {
       error.tableNotFound = true;

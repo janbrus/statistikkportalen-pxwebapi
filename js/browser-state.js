@@ -459,8 +459,8 @@ const BrowserState = {
   },
 
   /**
-   * Attach Enter-key handler to the search input
-   * Navigates to #search?q=... on Enter
+   * Attach Enter-key handler to the search input (the topic pages)
+   * Opens a pasted data URL or saved-query link, or navigates to #search?q=...
    */
   attachSearchInputListener() {
     const searchInput = document.getElementById('page-search');
@@ -469,10 +469,9 @@ const BrowserState = {
     searchInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
         const query = searchInput.value.trim();
-        if (query) {
-          URLRouter.navigateTo('search', { q: query });
-          URLRouter.handleRoute();
-        }
+        if (!query || openPastedQuery(query)) return;
+        URLRouter.navigateTo('search', { q: query });
+        URLRouter.handleRoute();
       }
     });
   }

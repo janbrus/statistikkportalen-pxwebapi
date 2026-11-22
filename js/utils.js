@@ -152,8 +152,10 @@ function showViewError(container, message, error = null) {
 /**
  * Run an API call with the loading indicator, and show its error on failure:
  * error.userMessage when the error has one (e.g. a table that doesn't exist),
- * otherwise errorMessage. Returns the result, or null on failure. A call
- * cancelled through renderGuard().signal (AbortError) returns null silently.
+ * otherwise errorMessage, followed by what the source itself said
+ * (error.sourceMessage from api._buildApiError, e.g. «SSB svarte: «Non-existent
+ * value»»). Returns the result, or null on failure. A call cancelled through
+ * renderGuard().signal (AbortError) returns null silently.
  *
  * @param {Function} apiFunction - Async function making the call
  * @param {string} errorMessage - Message for the error banner
@@ -172,7 +174,11 @@ async function safeApiCall(apiFunction, errorMessage, viewContainer = null) {
     showLoading(false);
     // Cancelled because a newer render started (renderGuard().signal): nothing to report
     if (error?.name === 'AbortError') return null;
-    const message = error?.userMessage || errorMessage;
+    // Some messages end without a full stop ('error.loadMetadata' + table id)
+    const sourceSays = error?.sourceMessage
+      ? (/[.!?]$/.test(errorMessage) ? ' ' : '. ') + tpl('error.sourceSays', AppConfig.source.name, error.sourceMessage)
+      : '';
+    const message = error?.userMessage || errorMessage + sourceSays;
     showError(message, error);
     showViewError(viewContainer, message, error);
     return null;
@@ -567,4 +573,202 @@ function detectSavedQueryId(text) {
   const hashMatch = t.match(/#sq\/(\d+)/);
   if (hashMatch) return hashMatch[1];
   return null;
+}
+
+// ========== Pasted or edited PxWebApi queries ==========
+
+/**
+ * Read a PxWebApi data query back into the app's own selection, so it runs in
+ * the table view as if the values had been picked. Two forms:
+ *
+ *   GET URL    {apiBaseUrl}/tables/{id}/data?valueCodes[Dim]=a,b&codelist[Dim]=id
+ *              Both forms the API builder shows: encoded (its copied URL) and
+ *              decoded (the plain-text display).
+ *   POST body  { "selection": [{ "variableCode", "valueCodes": [...], "codelist" }] }
+ *              The body doesn't name the table, so it needs tableId.
+ *
+ * Layout (stub, heading, placement), output format, outputValues and language
+ * aren't read: the table view uses its own, and buildPostBody derives
+ * outputValues from the codelist. Nothing is checked against the table's
+ * metadata; a wrong query shows the source's own error message.
+ *
+ * @param {string} text - The URL or the JSON body
+ * @param {string|null} tableId - Table for a POST body; a GET URL names its own
+ * @returns {{tableId: string, variableSelection: Object, activeCodelistIds: Object}|null}
+ *   Each dimension's codes as a list, as the source takes them (restoreSelections
+ *   reads a lone '*' or top(N) as its mode); null when the text is neither form
+ */
+function parseApiQuery(text, tableId = null) {
+  if (typeof text !== 'string') return null;
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+  const parsed = trimmed.startsWith('{')
+    ? _parseApiPostBody(trimmed, tableId)
+    : _parseApiGetUrl(trimmed);
+  if (!parsed) return null;
+
+  // A repeated dimension adds its codes; one without codes is left out
+  const values = new Map();
+  const codelists = new Map();
+  for (const [dim, codes, codelist] of parsed.entries) {
+    if (codes.length) values.set(dim, (values.get(dim) || []).concat(codes));
+    if (codelist) codelists.set(dim, codelist);
+  }
+  // Object.fromEntries, not obj[dim] = …: a dimension named __proto__ stays a key
+  return {
+    tableId: parsed.tableId,
+    variableSelection: Object.fromEntries(values),
+    activeCodelistIds: Object.fromEntries(codelists)
+  };
+}
+
+/**
+ * The GET form of parseApiQuery().
+ * @returns {{tableId: string, entries: Array<[string, string[], string?]>}|null}
+ *   [dimension, codes, codelist] in the URL's order
+ */
+function _parseApiGetUrl(text) {
+  const url = text.replace(/[\r\n]+/g, '');   // a URL wrapped over several lines
+  const qPos = url.indexOf('?');
+  const path = qPos === -1 ? url : url.slice(0, qPos);
+  const query = qPos === -1 ? '' : url.slice(qPos + 1);
+
+  // Compared without the scheme, so http and https both work. The "/" after the
+  // base keeps …/v2 from matching …/v2-beta. The table id goes into API paths
+  // and onto the page, so only [A-Za-z0-9_-].
+  const base = AppConfig.apiBaseUrl.replace(/^https?:\/\//i, '').replace(/\/+$/, '').toLowerCase() + '/';
+  const rest = path.replace(/^https?:\/\//i, '');
+  if (rest === path || !rest.toLowerCase().startsWith(base)) return null;
+  const route = rest.slice(base.length).match(/^tables\/([A-Za-z0-9_-]+)\/data\/?$/i);
+  if (!route) return null;
+
+  // The builder's encoded URL has %5B for every "[" (URLSearchParams), and there
+  // a "+" is a space. Its plain-text display has no %5B, and there a "+" is a
+  // plus ("105+"), so a code with a space reads back right only when encoded.
+  // URLSearchParams decodes leniently: a "%" that isn't %XX stays.
+  const params = new URLSearchParams(/%5B/i.test(query) ? query : query.replace(/\+/g, '%2B'));
+  const entries = [];
+  for (const [key, value] of params) {
+    const m = key.trim().match(/^(valueCodes|codelist)\[\s*(.+?)\s*\]$/i);
+    if (!m) continue;   // lang, outputFormat, outputValues[…], stub, heading
+    entries.push(m[1].toLowerCase() === 'codelist'
+      ? [m[2], [], value.trim()]
+      : [m[2], _splitGetValueCodes(value)]);
+  }
+  return { tableId: route[1], entries };
+}
+
+/**
+ * The POST form of parseApiQuery(). Codes are kept as they are: in a POST body
+ * a bracket is part of the code.
+ * @returns {{tableId: string, entries: Array<[string, string[], string?]>}|null}
+ */
+function _parseApiPostBody(text, tableId) {
+  if (!tableId) return null;
+  let body;
+  try {
+    body = JSON.parse(text);
+  } catch (e) {
+    return null;
+  }
+  if (!body || !Array.isArray(body.selection)) return null;
+
+  const valid = body.selection.every(entry => entry &&
+    typeof entry.variableCode === 'string' && entry.variableCode &&
+    Array.isArray(entry.valueCodes) && entry.valueCodes.every(c => typeof c === 'string') &&
+    (entry.codelist === undefined || typeof entry.codelist === 'string'));
+  if (!valid) return null;
+  return {
+    tableId,
+    entries: body.selection.map(entry =>
+      [entry.variableCode, entry.valueCodes.filter(c => c.trim()), entry.codelist])
+  };
+}
+
+/**
+ * Split a GET valueCodes value into codes. A comma separates codes except inside
+ * [...] or (...), and one [...] around a code is dropped. PxWebApi's GET binder
+ * splits on every comma outside brackets, so it needs [range(a,b)]; a POST body
+ * takes range(a,b) as it is. A bare range(a,b) is accepted here too.
+ *
+ * @param {string} value - e.g. "2015,[range(2020,2022)],top(2)"
+ * @returns {string[]} e.g. ["2015", "range(2020,2022)", "top(2)"]
+ */
+function _splitGetValueCodes(value) {
+  const parts = [];
+  let depth = 0;
+  let start = 0;
+  for (let i = 0; i < value.length; i++) {
+    const ch = value[i];
+    if (ch === '[' || ch === '(') {
+      depth++;
+    } else if ((ch === ']' || ch === ')') && depth > 0) {
+      depth--;
+    } else if (ch === ',' && depth === 0) {
+      parts.push(value.slice(start, i));
+      start = i + 1;
+    }
+  }
+  parts.push(value.slice(start));
+  return parts
+    .map(part => part.trim().replace(/^\[([\s\S]*)\]$/, '$1').trim())
+    .filter(Boolean);
+}
+
+/**
+ * The route that runs a parsed query: the table view with the selection in v
+ * and the codelists in c, as «Hent data» writes them. A query that selects
+ * nothing goes to the variable view instead, since the table view needs a
+ * selection.
+ *
+ * @param {{tableId: string, variableSelection: Object, activeCodelistIds: Object}} query
+ *   from parseApiQuery()
+ * @returns {{route: string, params: Object}} for URLRouter.navigateTo()
+ */
+function apiQueryRoute(query) {
+  const v = URLRouter.encode(query.variableSelection);   // null when empty
+  const c = URLRouter.encode(query.activeCodelistIds);
+  return { route: (v ? 'table/' : 'variables/') + query.tableId, params: { v, c } };
+}
+
+/**
+ * Open a parsed query (see apiQueryRoute) as a new history entry.
+ * @returns {Promise} handleRoute()'s
+ */
+function openApiQuery(query) {
+  const { route, params } = apiQueryRoute(query);
+  URLRouter.navigateTo(route, params);
+  return URLRouter.handleRoute();   // navigateTo() doesn't render
+}
+
+/**
+ * Whether openPastedQuery() would open the text, without opening it.
+ * @param {string} text
+ * @returns {boolean}
+ */
+function isPastedQuery(text) {
+  return parseApiQuery(text) !== null || detectSavedQueryId(text) !== null;
+}
+
+/**
+ * Open text from a search field if it is a query: a PxWebApi data URL
+ * (parseApiQuery) or a saved-query link (detectSavedQueryId). Used by all three
+ * search fields: the front page, the search view and the topic pages.
+ *
+ * @param {string} text
+ * @returns {boolean} true when it opened one; false leaves the text to the search
+ */
+function openPastedQuery(text) {
+  const query = parseApiQuery(text);
+  if (query) {
+    openApiQuery(query);
+    return true;
+  }
+  const sqId = detectSavedQueryId(text);
+  if (sqId) {
+    URLRouter.navigateTo('sq/' + sqId, {});
+    URLRouter.handleRoute();
+    return true;
+  }
+  return false;
 }

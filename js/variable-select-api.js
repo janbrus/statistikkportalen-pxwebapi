@@ -2,8 +2,9 @@
  * Variable Selection — API Query Preview, API Builder & Fetch Handler
  *
  * Builds and displays the live data URL preview, handles the collapsible
- * API builder section (format selectors, copy/open buttons), and triggers
- * the actual data fetch when the user clicks "Hent data".
+ * API builder section (format selectors, copy/open buttons, the editor that
+ * runs an edited query in the app), and triggers the actual data fetch when
+ * the user clicks "Hent data".
  */
 
 // ============================================================
@@ -31,6 +32,25 @@ function getTimeShortcut(dimCode, values) {
   if (!values.every(code => newestPos - index[code] < values.length)) return null;
 
   return values.length > 2 ? 'from(' + values[0] + ')' : 'top(' + values.length + ')';
+}
+
+/**
+ * The reverse of getTimeShortcut() for a list that is only from(X): X and every
+ * later code, in the dimension's order. A query edited in the API builder
+ * comes back to the variable view in that form (see restoreSelections), and
+ * the builder writes from() for the most common time pick.
+ *
+ * @param {string} dimCode - Dimension code
+ * @param {string[]} values - Codes or expressions from a query
+ * @returns {string[]} The expanded codes, or values unchanged
+ */
+function expandFromShortcut(dimCode, values) {
+  const index = VarSelect.tableMetadata?.dimension?.[dimCode]?.category?.index;
+  const match = values.length === 1 && /^\s*from\(\s*(.+?)\s*\)\s*$/i.exec(values[0]);
+  if (!index || !match || !(match[1] in index)) return values;
+  const byPosition = [];
+  for (const code in index) byPosition[index[code]] = code;
+  return byPosition.slice(index[match[1]]);
 }
 
 /**
@@ -256,6 +276,91 @@ function setupApiBuilderEvents() {
       window.open(url, '_blank');
     }
   });
+
+  setupApiEditEvents();
+}
+
+// ============================================================
+// Edit the query and run it in the app
+// ============================================================
+
+// { tableId, text } of the last query run from the editor, until «Avbryt».
+// «Rediger» offers it again for that table: a query the source turned down can
+// be fixed, and codes or expressions the cards can't show aren't lost on the
+// way back from the table view. Module-level, not in VarSelect, since it
+// outlives the variable view.
+let _apiEditDraft = null;
+
+/**
+ * The text «Rediger» starts from: the draft for this table, or else what the
+ * builder shows (the URL in GET mode, plain or encoded as the checkbox says;
+ * the body in POST mode).
+ */
+function apiEditStartText() {
+  const tableId = AppState.selectedTable?.id;
+  if (_apiEditDraft && _apiEditDraft.tableId === tableId) return _apiEditDraft.text;
+  const preview = document.getElementById('query-preview-url');
+  if (!preview?.dataset.rawUrl) updateQueryPreview();   // not built yet
+  const post = document.getElementById('api-method-toggle')?.value === 'post';
+  return (post ? document.getElementById('api-post-body-preview') : preview)?.textContent || '';
+}
+
+/**
+ * «Rediger» opens a text field under the preview with the query in it; «Kjør
+ * spørringen» (or Ctrl/Cmd+Enter) reads it with parseApiQuery() and opens the
+ * table view through the route, as «Hent data» would. The app's own checks
+ * before a fetch (required variables, cell count) are skipped on purpose:
+ * the source's message shows instead. The preview stays as it is.
+ */
+function setupApiEditEvents() {
+  const editBtn = document.getElementById('api-edit-btn');
+  const section = document.getElementById('api-edit-section');
+  const input = document.getElementById('api-edit-input');
+  const error = document.getElementById('api-edit-error');
+  if (!editBtn || !section || !input || !error) return;
+
+  const close = () => {
+    _apiEditDraft = null;
+    section.style.display = 'none';
+    error.textContent = '';
+    editBtn.setAttribute('aria-expanded', 'false');
+    editBtn.focus();
+  };
+
+  const run = () => {
+    const query = parseApiQuery(input.value, AppState.selectedTable?.id);
+    if (!query) {
+      error.textContent = tpl('api.editInvalid', AppConfig.apiBaseUrl);
+      input.focus();
+      return;
+    }
+    // Under the table the query names: a GET URL may name another table
+    _apiEditDraft = { tableId: query.tableId, text: input.value };
+    openApiQuery(query);
+  };
+
+  editBtn.addEventListener('click', () => {
+    if (section.style.display === 'none') {
+      input.value = apiEditStartText();
+      error.textContent = '';
+      section.style.display = '';
+      editBtn.setAttribute('aria-expanded', 'true');
+    }
+    input.focus();
+  });
+
+  input.addEventListener('input', () => { error.textContent = ''; });
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      run();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      close();
+    }
+  });
+  document.getElementById('api-edit-run')?.addEventListener('click', run);
+  document.getElementById('api-edit-cancel')?.addEventListener('click', close);
 }
 
 /**

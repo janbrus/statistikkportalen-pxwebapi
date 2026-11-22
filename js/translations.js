@@ -34,6 +34,7 @@ const translations = {
     // Errors
     'error.prefix':           'Feil:',
     'error.details':          'Se tekniske detaljer',
+    'error.sourceSays':       '{0} svarte: \u00ab{1}\u00bb',
     'error.loadData':         'Kunne ikke laste data',
     'error.loadMetadata':     'Kunne ikke laste metadata for tabell ',
     'error.fetchData':        'Kunne ikke hente data fra API. Prøv igjen eller endre variabelvalget.',
@@ -103,7 +104,7 @@ const translations = {
     'help.share.body':          'Last ned som Excel, CSV eller PX. \u00abF\u00e5 lenke\u00bb gir en URL som gjenskaper hele utvalget. Lagrede sp\u00f8rringer kan deles og henter alltid ferske tall.',
 
     'help.advanced.title':      'For viderekomne',
-    'help.advanced.body':       'API-byggeren lager GET- og POST-kall mot {0}s API, rett fra utvalget ditt og i flere formater. Vil du heller sp\u00f8rre med naturlig spr\u00e5k? Det finnes egne skills for AI-assistenter. Se den fullstendige veiledningen for detaljer.',
+    'help.advanced.body':       'API-byggeren lager GET- og POST-kall mot {0}s API, rett fra utvalget ditt og i flere formater. Med \u00abRediger\u00bb kan du endre sp\u00f8rringen, eller lime inn en annen, og kj\u00f8re den i appen. En GET-URL kan ogs\u00e5 limes inn i s\u00f8kefeltet. Vil du heller sp\u00f8rre med naturlig spr\u00e5k? Det finnes egne skills for AI-assistenter. Se den fullstendige veiledningen for detaljer.',
 
     // Table units (singular / plural)
     'unit.table.one':   'tabell',
@@ -231,6 +232,11 @@ const translations = {
     'api.openMetadata':     'Åpne metadata i ny fane',
     'api.urlTooLong':       'URL-en er {0} tegn \u2014 overskrider grensen på {1} tegn. Bruk POST-modus for store utvalg.',
     'api.getOnlyFeature':   'Kun tilgjengelig i GET-modus',
+    'api.edit':             'Rediger',
+    'api.editLabel':        'Spørring som kjøres i appen: GET-URL eller POST-body (JSON)',
+    'api.editRun':          'Kjør spørringen',
+    'api.editCancel':       'Avbryt',
+    'api.editInvalid':      'Kjenner ikke igjen spørringen. Bruk en GET-URL som begynner med {0}/tables/{tabell}/data, eller en POST-body med "selection".',
 
     // Table display
     'table.rotate':       '\u21BB Roter tabell',
@@ -354,6 +360,7 @@ const translations = {
 
     'error.prefix':           'Error:',
     'error.details':          'Show technical details',
+    'error.sourceSays':       '{0} replied: \u201c{1}\u201d',
     'error.loadData':         'Could not load data',
     'error.loadMetadata':     'Could not load metadata for table ',
     'error.fetchData':        'Could not fetch data from the API. Please try again or change your variable selection.',
@@ -422,7 +429,7 @@ const translations = {
     'help.share.body':          'Download as Excel, CSV or PX. \u201cGet link\u201d gives a URL that recreates your whole selection. Saved queries can be shared and always fetch fresh numbers.',
 
     'help.advanced.title':      'For advanced users',
-    'help.advanced.body':       'The API builder creates GET and POST calls to {0}\u2019s API, straight from your selection and in several formats. Prefer natural language? Dedicated skills exist for AI assistants. See the full user guide for details.',
+    'help.advanced.body':       'The API builder creates GET and POST calls to {0}\u2019s API, straight from your selection and in several formats. With \u201cEdit\u201d you can change the query, or paste another, and run it in the app. A GET URL can also be pasted into the search field. Prefer natural language? Dedicated skills exist for AI assistants. See the full user guide for details.',
 
     'unit.table.one':   'table',
     'unit.table.many':  'tables',
@@ -540,6 +547,11 @@ const translations = {
     'api.openMetadata':     'Open metadata in new tab',
     'api.urlTooLong':       'The URL is {0} characters \u2014 exceeds the {1} character limit. Use POST mode for large selections.',
     'api.getOnlyFeature':   'Only available in GET mode',
+    'api.edit':             'Edit',
+    'api.editLabel':        'Query to run in the app: GET URL or POST body (JSON)',
+    'api.editRun':          'Run the query',
+    'api.editCancel':       'Cancel',
+    'api.editInvalid':      'The query isn\'t recognised. Use a GET URL that starts with {0}/tables/{table}/data, or a POST body with "selection".',
 
     'table.rotate':        '\u21BB Rotate table',
     'table.download':      '\u2B07 Download in Excel format',
@@ -659,6 +671,7 @@ const translations = {
 
     'error.prefix':           'Fel:',
     'error.details':          'Visa tekniska detaljer',
+    'error.sourceSays':       '{0} svarade: \u201D{1}\u201D',
     'error.loadData':         'Kunde inte ladda data',
     'error.loadMetadata':     'Kunde inte ladda metadata f\u00F6r tabell ',
     'error.fetchData':        'Kunde inte h\u00E4mta data fr\u00E5n API:t. F\u00F6rs\u00F6k igen eller \u00E4ndra variabelurvalet.',
@@ -727,7 +740,7 @@ const translations = {
     'help.share.body':          'Ladda ned som Excel, CSV eller PX. \u201DF\u00E5 l\u00E4nk\u201D ger en URL som \u00E5terskapar hela ditt urval. Sparade fr\u00E5gor kan delas och h\u00E4mtar alltid f\u00E4rska tal.',
 
     'help.advanced.title':      'F\u00F6r avancerade anv\u00E4ndare',
-    'help.advanced.body':       'API-byggaren skapar GET- och POST-anrop mot {0}:s API, direkt fr\u00E5n ditt urval och i flera format. Vill du hellre fr\u00E5ga p\u00E5 naturligt spr\u00E5k? Det finns egna skills f\u00F6r AI-assistenter. Se den fullst\u00E4ndiga anv\u00E4ndarguiden f\u00F6r detaljer.',
+    'help.advanced.body':       'API-byggaren skapar GET- och POST-anrop mot {0}:s API, direkt fr\u00E5n ditt urval och i flera format. Med \u201DRedigera\u201D kan du \u00E4ndra fr\u00E5gan, eller klistra in en annan, och k\u00F6ra den i appen. En GET-URL kan ocks\u00E5 klistras in i s\u00F6kf\u00E4ltet. Vill du hellre fr\u00E5ga p\u00E5 naturligt spr\u00E5k? Det finns egna skills f\u00F6r AI-assistenter. Se den fullst\u00E4ndiga anv\u00E4ndarguiden f\u00F6r detaljer.',
 
     'unit.table.one':   'tabell',
     'unit.table.many':  'tabeller',
@@ -845,6 +858,11 @@ const translations = {
     'api.openMetadata':     '\u00D6ppna metadata i ny flik',
     'api.urlTooLong':       'URL:en \u00E4r {0} tecken \u2014 \u00F6verskrider gr\u00E4nsen p\u00E5 {1} tecken. Anv\u00E4nd POST-l\u00E4ge f\u00F6r stora urval.',
     'api.getOnlyFeature':   'Endast tillg\u00E4nglig i GET-l\u00E4ge',
+    'api.edit':             'Redigera',
+    'api.editLabel':        'Fr\u00E5ga som k\u00F6rs i appen: GET-URL eller POST-body (JSON)',
+    'api.editRun':          'K\u00F6r fr\u00E5gan',
+    'api.editCancel':       'Avbryt',
+    'api.editInvalid':      'Fr\u00E5gan k\u00E4nns inte igen. Anv\u00E4nd en GET-URL som b\u00F6rjar med {0}/tables/{tabell}/data, eller en POST-body med "selection".',
 
     'table.rotate':        '\u21BB Rotera tabell',
     'table.download':      '\u2B07 Ladda ned i Excel-format',
@@ -973,11 +991,12 @@ function t(key) {
 
 /**
  * Look up a UI string and replace {0}, {1}, … placeholders with args.
+ * One pass with a replacer function, so an arg goes in as it is: "$&" in it
+ * isn't read as a pattern, and a "{1}" in it isn't filled in by the next arg
+ * (an arg can be the source's own error text). A placeholder without an arg stays.
  */
 function tpl(key, ...args) {
-  let s = t(key);
-  args.forEach((arg, i) => { s = s.replace(`{${i}}`, arg); });
-  return s;
+  return t(key).replace(/\{(\d+)\}/g, (placeholder, i) => (i < args.length ? String(args[i]) : placeholder));
 }
 
 /**
