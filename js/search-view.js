@@ -108,19 +108,16 @@ async function renderSearchView(container) {
     searchInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
         e.stopPropagation();
-        const sqId = detectSavedQueryId(searchInput.value);
-        if (sqId) {
-          URLRouter.navigateTo('sq/' + sqId, {});
-          URLRouter.handleRoute();
-        } else {
-          _searchPerformSearch();
-        }
+        // A pasted data URL or saved-query link opens; anything else is searched
+        if (!openPastedQuery(searchInput.value)) _searchPerformSearch();
       }
     });
 
-    // Debounced auto-search while on search page
+    // Debounced auto-search while on search page. Not for a pasted query, which
+    // opens on Enter: searching for it would cost up to two API calls (enhanced
+    // search asks the server) and cache a search nobody wants.
     searchInput.addEventListener('input', debounce(() => {
-      _searchPerformSearch();
+      if (!isPastedQuery(searchInput.value)) _searchPerformSearch();
     }, 500));
 
     searchInput.focus();

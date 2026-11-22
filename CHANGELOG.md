@@ -30,7 +30,9 @@ Sammenlignet med 1.4.5, siste versjon bare for PxWebApi. Utviklingsversjonene
   fram til den nyeste, bruker GET-URL-en i API-byggeren `top()` eller `from()`, så
   lenken også henter perioder som publiseres senere.
 - **Rediger API-spørringen.** «Rediger» i API-byggeren lar deg endre GET-URL-en eller
-  POST-bodyen, eller lime inn en annen, og kjøre den rett i appen.
+  POST-bodyen, eller lime inn en annen, og kjøre den rett i appen. En GET-URL limt
+  inn i søkefeltet åpner også tabellen.
+- En lenke til en lagret spørring kan nå også limes inn i søkefeltet på emnesidene.
 
 ### Endret
 
@@ -58,3 +60,5 @@ Sammenlignet med 1.4.5, siste versjon bare for PxWebApi. Utviklingsversjonene
 - På mobil var siden bredere enn skjermen, og språkvalget havnet utenfor til høyre.
 - En lenke til en tabell uten utvalg, eller uten tabellnummer, ble stående på
   «Initialiserer...». Nå åpnes variabelvalget for tabellen, eller forsiden.
+- Gikk du fra en lagret spørring tilbake til variabelvalget, var tidskortet tomt når
+  spørringen brukte «Siste n» eller `from()`. Nå er de samme periodene valgt.

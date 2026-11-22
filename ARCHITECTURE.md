@@ -213,8 +213,10 @@ BrowserState.selectTable("09772")
                     //                   ones), or explicit codes when a codelist is active
                     //   "Opphev alle" → deselect all (specific mode, empty selection)
                     //   "Siste N"     → top(N) mode (time dimensions only)
-              → restoreSelections()                // From AppState.variableSelection (URL state);
-                                                   // a lone from(X) via expandFromShortcut()
+              → restoreSelections()                // From AppState.variableSelection (URL state).
+                                                   // cardSelection(): a lone ["*"] or ["top(N)"]
+                                                   // (saved and pasted queries keep lists) is
+                                                   // its mode; a lone from(X) via expandFromShortcut()
               → autoSelectSingleValueDimensions()  // Mandatory dimensions with only one value
               → updateSelectionStatus()            // Validate, show cell count, enable/disable "Hent data"
 ```
@@ -457,21 +459,21 @@ View state is encoded into the URL hash so views can be bookmarked and shared. T
 The `v`, `c`, and `l` parameters are JSON objects encoded as URL-safe Base64:
 
 - Standard Base64, then `+`→`-`, `/`→`_`, `=`→`~`
-- `v` = variableSelection: `{ "Kjonn": ["1","2"], "Tid": "top(5)" }`
+- `v` = variableSelection: `{ "Kjonn": ["1","2"], "Tid": "top(5)" }`. A saved or pasted query keeps the source's lists (`"Tid": ["top(5)"]`), which `restoreSelections()` reads the same way
 - `c` = activeCodelistIds: `{ "Region": "vs_RegionKommune" }`
 - `l` = tableLayout: `{ "rows": ["Tid"], "columns": ["Kjonn","Region"] }`
 
 `URLRouter.navigateTo()` only updates history and never renders, so follow it with `URLRouter.handleRoute()` or `renderCurrentView()`. The app listens for `popstate`, not `hashchange`. `AppState.setView()` writes the hash only for `variables` and `table`; home, search and topic manage their own URLs. `handleRoute()` also accepts `#help` as an alias for `#hjelp`, redirects legacy `#browser*` routes, sends unknown routes home and treats a bare `#?q=…` as a search. A `#table/{id}` without a `v` that decodes goes to `#variables/{id}` (keeping `c`), and `#variables/` or `#table/` without a table number goes home. Each such redirect replaces the history entry and then renders its target.
 
-Pasted saved-query links are recognised by `detectSavedQueryId()` in `utils.js` (`/statbank/sq/{id}`, `?sq={id}`, `#sq/{id}`), called from the search inputs in `front-page.js` and `search-view.js`.
+Pasted saved-query links are recognised by `detectSavedQueryId()` in `utils.js` (`/statbank/sq/{id}`, `?sq={id}`, `#sq/{id}`), and pasted data URLs by `parseApiQuery()` (below). All three search inputs start their Enter handler with `openPastedQuery()`: the front page (`front-page.js`), the search view (`search-view.js`) and the topic pages (`BrowserState.attachSearchInputListener()`). The search view's debounced auto-search skips text `isPastedQuery()` recognises: enhanced search would ask the server (up to two calls) and cache a search for the URL.
 
-**PxWebApi queries read back.** `parseApiQuery(text, tableId)` (`utils.js`) turns a data query into `{ tableId, variableSelection, activeCodelistIds }`, in the forms the variable view writes (`'*'`, `'top(N)'` or a list of codes), or returns `null`.
+**PxWebApi queries read back.** `parseApiQuery(text, tableId)` (`utils.js`) turns a data query into `{ tableId, variableSelection, activeCodelistIds }`, with each dimension's codes as a list, as the source takes them, or returns `null`.
 - **A GET URL** must lie under `AppConfig.apiBaseUrl` plus `/` (`http` or `https`) and end in `/tables/{id}/data`, with `{id}` only `[A-Za-z0-9_-]`. Line breaks are dropped. It reads `valueCodes[Dim]` (a repeated one adds to it) and `codelist[Dim]`, and leaves out language, output format, `outputValues` and layout: the table view picks its own.
 - **A POST body** (`{ "selection": [...] }`) needs `tableId`, since it doesn't name the table. Its codes are kept as they are.
 - **`+`:** a query string with `%5B` is the builder's encoded URL, and there `+` is a space (`URLSearchParams`). Without it, it is the plain-text display, and `+` is a plus (`105+`). A code with a space therefore reads back right only from the encoded form. `URLSearchParams` decodes it, leniently: a `%` that isn't `%XX` stays, and broken UTF-8 becomes U+FFFD.
 - **Brackets:** a comma splits codes except inside `[...]` or `(...)`, and one `[...]` around a code is dropped. The rule comes from PxWebApi's GET binder (`QueryStringToDictionaryOfStrings.cs` in PxTools/PxWebApi), not the spec. It splits on every comma outside brackets, so a GET URL needs `[range(a,b)]`. A POST body takes `range(a,b)` as it is and reads a bracket as part of the code. A bare `range(a,b)` is accepted here too.
 
-`apiQueryRoute()` gives the route that runs a parsed query: `table/{id}` with `v` and `c`, as «Hent data» writes them, or `variables/{id}` when nothing is selected. `openApiQuery()` navigates there and renders. `openPastedQuery(text)` tries `parseApiQuery()`, then `detectSavedQueryId()`, and returns whether it opened something. The query isn't checked against the table's metadata before it is sent; a wrong one shows the source's own message through `safeApiCall()`.
+`apiQueryRoute()` gives the route that runs a parsed query: `table/{id}` with `v` and `c`, as «Hent data» writes them, or `variables/{id}` when nothing is selected. `openApiQuery()` navigates there and renders. `openPastedQuery(text)` tries `parseApiQuery()`, then `detectSavedQueryId()`, and returns whether it opened something; `isPastedQuery(text)` says whether it would. The query isn't checked against the table's metadata before it is sent; a wrong one shows the source's own message through `safeApiCall()`.
 
 ## SSB API integration
 

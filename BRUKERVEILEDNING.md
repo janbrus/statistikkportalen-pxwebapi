@@ -93,6 +93,9 @@ ingen rolle. Tips for bedre treff:
   *anleggsvirksomhet*.
 - Hver tabell i trefflisten vises som et **kort** med periode, oppdateringsdato,
   frekvens og antall variabler. Avsluttede serier er tydelig merket.
+- **Lim inn en lenke.** En lenke til en lagret spørring hos SSB, eller en GET-URL mot
+  SSBs API (se kapittel 9), åpner tabellen direkte når du trykker Enter. Det gjelder
+  søkefeltet på forsiden, i søket og på emnesidene.
 
 ### Filtrer treffene
 
@@ -345,6 +348,7 @@ gitt den, og kan rotere, lage diagram og laste ned som vanlig.
   SSBs eget svar, for eksempel «SSB svarte: «Non-existent value»».
 - I klartekst er `+` alltid et plusstegn (`105+`). En kode med mellomrom må derfor
   komme fra den kodede URL-en, der mellomrom er `+`.
+- En GET-URL kan også limes inn i søkefeltet. Da åpnes tabellen på samme måte.
 
 ### Naturlig språk i stedet?
 

@@ -595,8 +595,8 @@ function detectSavedQueryId(text) {
  * @param {string} text - The URL or the JSON body
  * @param {string|null} tableId - Table for a POST body; a GET URL names its own
  * @returns {{tableId: string, variableSelection: Object, activeCodelistIds: Object}|null}
- *   In the forms the variable view writes ('*', 'top(N)' or a list of codes);
- *   null when the text is neither form
+ *   Each dimension's codes as a list, as the source takes them (restoreSelections
+ *   reads a lone '*' or top(N) as its mode); null when the text is neither form
  */
 function parseApiQuery(text, tableId = null) {
   if (typeof text !== 'string') return null;
@@ -617,8 +617,7 @@ function parseApiQuery(text, tableId = null) {
   // Object.fromEntries, not obj[dim] = …: a dimension named __proto__ stays a key
   return {
     tableId: parsed.tableId,
-    variableSelection: Object.fromEntries(
-      [...values].map(([dim, codes]) => [dim, _normalizeApiValueCodes(codes)])),
+    variableSelection: Object.fromEntries(values),
     activeCodelistIds: Object.fromEntries(codelists)
   };
 }
@@ -717,21 +716,6 @@ function _splitGetValueCodes(value) {
 }
 
 /**
- * The selection forms restoreSelections() and getVariableSelection() use: a
- * lone "*" is '*', a lone top(N) is 'top(N)' (lowercase: the source takes TOP(3)
- * too, and the variable view checks startsWith('top(')). Anything else stays a
- * list, expressions included; top(N, offset) too, since the top mode has no offset.
- */
-function _normalizeApiValueCodes(codes) {
-  if (codes.length === 1) {
-    if (codes[0] === '*') return '*';
-    const top = codes[0].match(/^top\(\s*(\d+)\s*\)$/i);
-    if (top) return 'top(' + top[1] + ')';
-  }
-  return codes;
-}
-
-/**
  * The route that runs a parsed query: the table view with the selection in v
  * and the codelists in c, as «Hent data» writes them. A query that selects
  * nothing goes to the variable view instead, since the table view needs a
@@ -758,8 +742,18 @@ function openApiQuery(query) {
 }
 
 /**
+ * Whether openPastedQuery() would open the text, without opening it.
+ * @param {string} text
+ * @returns {boolean}
+ */
+function isPastedQuery(text) {
+  return parseApiQuery(text) !== null || detectSavedQueryId(text) !== null;
+}
+
+/**
  * Open text from a search field if it is a query: a PxWebApi data URL
- * (parseApiQuery) or a saved-query link (detectSavedQueryId).
+ * (parseApiQuery) or a saved-query link (detectSavedQueryId). Used by all three
+ * search fields: the front page, the search view and the topic pages.
  *
  * @param {string} text
  * @returns {boolean} true when it opened one; false leaves the text to the search

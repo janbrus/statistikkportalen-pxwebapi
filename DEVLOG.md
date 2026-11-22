@@ -578,19 +578,83 @@ kjørte den virkelige appen i Chromium mot SSB. De ligger utenfor repoet, i
       til et utvalg med sin egen løkke, uten å gjøre `['*']` og `['top(N)']` om
       slik parseren gjør. `restoreSelections()` kjenner bare `'*'` og
       `'top(N)'`, så et slikt kort kan stå tomt etter «Tilbake til
-      variabelvalg». Ikke sjekket mot SSB. Rettingen hører hjemme i
-      `restoreSelections()`, som da godtar begge formene, men den endrer
-      oppførselen også for de to andre veiene.
+      variabelvalg». Rettingen hører hjemme i `restoreSelections()`, som da
+      godtar begge formene, men den endrer oppførselen også for de to andre
+      veiene.
+      - **Sjekket mot SSB 2026-11-22** (vedlikeholderen ba om det):
+        - Standardvalget for 07459, 09772, 03013 og 05803 har bare vanlige
+          koder, og noen ganger en tom liste med kodeliste. «Fyll inn
+          standardvalg» rammes ikke.
+        - De lagrede spørringene har uttrykk. 30116027 (tabell 09170) har
+          `Tid=["top(3)"]`, og 30121434 (tabell 14704) har
+          `Tid=["from(2000M07)"]`.
+        - I appen, etter `#sq/{id}` og «Tilbake til variabelvalg»: med
+          `["top(3)"]` er Tid-kortet tomt og «Hent data» sperret. Det er en
+          feil, og den fantes også i 1.4.5 (samme kode). Med
+          `["from(2000M07)"]` er alle 316 periodene valgt. Det skyldes
+          `expandFromShortcut` fra steg 2. I 1.4.5 var kortet tomt, så dette
+          står i CHANGELOG under «Rettet».
+        - `["top(3)"]` er rettet i punkt 31.
       - Verifisert: 459/459 (3 nye: `tpl` med `{1}` og uten argument, og punktum
         før kildens tekst). `pasteurl.mjs` på nytt: 18/18, 12 forespørsler.
+    - **Steg 3: alle søkefelt** (vedlikeholderens klarsignal, 2026-11-22). Alle tre
+      Enter-håndteringene begynner med `openPastedQuery()`: forsiden
+      (`front-page.js`), søkevisningen (`search-view.js`) og emnesidene
+      (`BrowserState.attachSearchInputListener()`). Det erstatter de to
+      dupliserte sq-blokkene.
+      - Emnesidene sendte før alt videre som tekstsøk, også i 1.4.5. Nå åpner de
+        både data-URL-er og lenker til lagrede spørringer, så det står i
+        CHANGELOG.
+      - Det forsinkede autosøket i søkevisningen hopper over tekst
+        `isPastedQuery()` kjenner igjen. Forbedret søk ville ellers spurt
+        serveren (opptil to kall) og cachet et søk etter URL-en i 24 timer.
+        Det gjaldt også sq-lenker før.
+      - `help.advanced.body`, `BRUKERVEILEDNING.md` (§3 Søk og §9) og CHANGELOG
+        nevner innlimingen.
+      - Verifisert: 460/460 (`isPastedQuery`). Live med
+        `~/sp_test/live-tests/pastesearch.mjs` (ny, i `run-all.sh`): 7/7, 9
+        forespørsler og ingen konsollfeil.
+        - Byggerens kodede URL med `105+`, limt inn i alle tre søkefeltene,
+          åpner tabell 07459 med Alder 105+.
+        - Innliming i søkevisningen gir ingen kall, og URL-en havner ikke i
+          `#search?q=`.
+        - Fritekst på en emneside går fortsatt til `#search?q=`.
+        - Mot en kopi uten vakten i autosøket feilet de to ventede sjekkene:
+          et kall til `/tables` og URL-en i `#search?q=`.
+31. **Lagrede spørringer med «Siste n» etter «Tilbake til variabelvalg»**
+    (vedlikeholderen ba om det, 2026-11-22). Funnet under punkt 30. SSB lagrer
+    kodene i en lagret spørring som lister, for eksempel `Tid=["top(3)"]` (30116027).
+    `restoreSelections()` kjente bare `'top(N)'` og `'*'` som tekst. Etter
+    «Tilbake til variabelvalg» var Tid-kortet derfor tomt og «Hent data» sperret.
+    Det gjaldt også i 1.4.5.
+    - `cardSelection()` i `variable-select-render.js` gjør en liste med bare `"*"`
+      eller `top(N)` (uansett store og små bokstaver) om til kortets modus.
+      `restoreSelections()` leser hvert lagret utvalg gjennom den. Det er det
+      eneste stedet som leser `AppState.variableSelection` sine former, siden
+      statuslinjen og «Hent data» leser kortene.
+    - `parseApiQuery` gjør derfor ikke lenger om selv. Den gir kodene som lister,
+      slik kilden tar dem, og `_normalizeApiValueCodes` er borte. Samme regel
+      gjelder nå for innlimte og lagrede spørringer og for standardvalget.
+    - Uendret: `top(N, offset)` og andre uttrykk enn `from()` gir fortsatt et tomt
+      kort, siden kortene ikke har noen modus for dem. `["*"]` er dekket av testene,
+      men er ikke sett i en lagret spørring hos SSB.
+    - Verifisert: 467/467. Den nye suiten `cardSelection` har 8 sjekker, og
+      parsertestene forventer lister. Live med
+      `~/sp_test/live-tests/sqback.mjs` (ny, i `run-all.sh`): 7/7 og 10
+      forespørsler. Med 30116027 står Tid i «Siste 3» og «Hent data» er på. Med
+      30121434 er 2000M07 til nyeste periode valgt. Mot koden i `HEAD` (uten
+      rettingen) feilet de to ventede sjekkene for `["top(3)"]`, mens `from()`
+      besto. `pasteurl` (18/18) og `pastesearch` (7/7) er kjørt på nytt med
+      `run-all.sh`.
 
 `test.html`: 204/204 etter steg 8, 216 etter steg 9, 254 etter steg 10, 267 etter
 steg 11, 276 etter steg 14 og 15, 285 etter steg 16, 291 etter steg 17, 295/295
 etter steg 18, 297/297 etter steg 19, 306/306 etter steg 21, 310/310 etter
 steg 22, 326/326 etter steg 23, 329/329 med én teller for alle faner, 331/331
 med margin og 343/343 etter steg 24 og 25, også i git-repoet (steg 26),
-355/355 etter steg 28, 363/363 etter steg 29, og 410/410, 445/445, 456/456 og
-459/459 etter steg 1 og 2 av punkt 30, SSBs svar i feilmeldingen og oppryddingen.
+355/355 etter steg 28, 363/363 etter steg 29, og 410/410, 445/445, 456/456,
+459/459 og 460/460 etter steg 1 og 2 av punkt 30, SSBs svar i feilmeldingen,
+oppryddingen og steg 3, og 467/467 etter punkt 31.
 
 **Sammenligning med 1.4.5.** CHANGELOG bygger på:
 - norske tekstnøkler i 1.4.5 og `sp.1.6` (76 nye, 1 fjernet);

@@ -106,15 +106,10 @@ async function renderFrontPage(container) {
     searchInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
         const query = searchInput.value.trim();
-        if (!query) return;
-        const sqId = detectSavedQueryId(query);
-        if (sqId) {
-          URLRouter.navigateTo('sq/' + sqId, {});
-          URLRouter.handleRoute();
-        } else {
-          URLRouter.navigateTo('search', { q: query });
-          URLRouter.handleRoute();
-        }
+        // A pasted data URL or saved-query link opens; anything else is searched
+        if (!query || openPastedQuery(query)) return;
+        URLRouter.navigateTo('search', { q: query });
+        URLRouter.handleRoute();
       }
     });
     searchInput.focus();

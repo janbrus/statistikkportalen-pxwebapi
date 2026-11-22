@@ -104,7 +104,7 @@ const translations = {
     'help.share.body':          'Last ned som Excel, CSV eller PX. \u00abF\u00e5 lenke\u00bb gir en URL som gjenskaper hele utvalget. Lagrede sp\u00f8rringer kan deles og henter alltid ferske tall.',
 
     'help.advanced.title':      'For viderekomne',
-    'help.advanced.body':       'API-byggeren lager GET- og POST-kall mot {0}s API, rett fra utvalget ditt og i flere formater. Med \u00abRediger\u00bb kan du endre sp\u00f8rringen, eller lime inn en annen, og kj\u00f8re den i appen. Vil du heller sp\u00f8rre med naturlig spr\u00e5k? Det finnes egne skills for AI-assistenter. Se den fullstendige veiledningen for detaljer.',
+    'help.advanced.body':       'API-byggeren lager GET- og POST-kall mot {0}s API, rett fra utvalget ditt og i flere formater. Med \u00abRediger\u00bb kan du endre sp\u00f8rringen, eller lime inn en annen, og kj\u00f8re den i appen. En GET-URL kan ogs\u00e5 limes inn i s\u00f8kefeltet. Vil du heller sp\u00f8rre med naturlig spr\u00e5k? Det finnes egne skills for AI-assistenter. Se den fullstendige veiledningen for detaljer.',
 
     // Table units (singular / plural)
     'unit.table.one':   'tabell',
@@ -429,7 +429,7 @@ const translations = {
     'help.share.body':          'Download as Excel, CSV or PX. \u201cGet link\u201d gives a URL that recreates your whole selection. Saved queries can be shared and always fetch fresh numbers.',
 
     'help.advanced.title':      'For advanced users',
-    'help.advanced.body':       'The API builder creates GET and POST calls to {0}\u2019s API, straight from your selection and in several formats. With \u201cEdit\u201d you can change the query, or paste another, and run it in the app. Prefer natural language? Dedicated skills exist for AI assistants. See the full user guide for details.',
+    'help.advanced.body':       'The API builder creates GET and POST calls to {0}\u2019s API, straight from your selection and in several formats. With \u201cEdit\u201d you can change the query, or paste another, and run it in the app. A GET URL can also be pasted into the search field. Prefer natural language? Dedicated skills exist for AI assistants. See the full user guide for details.',
 
     'unit.table.one':   'table',
     'unit.table.many':  'tables',
@@ -740,7 +740,7 @@ const translations = {
     'help.share.body':          'Ladda ned som Excel, CSV eller PX. \u201DF\u00E5 l\u00E4nk\u201D ger en URL som \u00E5terskapar hela ditt urval. Sparade fr\u00E5gor kan delas och h\u00E4mtar alltid f\u00E4rska tal.',
 
     'help.advanced.title':      'F\u00F6r avancerade anv\u00E4ndare',
-    'help.advanced.body':       'API-byggaren skapar GET- och POST-anrop mot {0}:s API, direkt fr\u00E5n ditt urval och i flera format. Med \u201DRedigera\u201D kan du \u00E4ndra fr\u00E5gan, eller klistra in en annan, och k\u00F6ra den i appen. Vill du hellre fr\u00E5ga p\u00E5 naturligt spr\u00E5k? Det finns egna skills f\u00F6r AI-assistenter. Se den fullst\u00E4ndiga anv\u00E4ndarguiden f\u00F6r detaljer.',
+    'help.advanced.body':       'API-byggaren skapar GET- och POST-anrop mot {0}:s API, direkt fr\u00E5n ditt urval och i flera format. Med \u201DRedigera\u201D kan du \u00E4ndra fr\u00E5gan, eller klistra in en annan, och k\u00F6ra den i appen. En GET-URL kan ocks\u00E5 klistras in i s\u00F6kf\u00E4ltet. Vill du hellre fr\u00E5ga p\u00E5 naturligt spr\u00E5k? Det finns egna skills f\u00F6r AI-assistenter. Se den fullst\u00E4ndiga anv\u00E4ndarguiden f\u00F6r detaljer.',
 
     'unit.table.one':   'tabell',
     'unit.table.many':  'tabeller',
